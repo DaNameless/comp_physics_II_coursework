@@ -89,15 +89,17 @@ class Integrators:
     """
     This class contains the integrators for the two-body problem.
     """
-    def __init__(self, t_span, dt, correction, two_body_instance):
+    def __init__(self, N, dt, correction, two_body_instance):
         """
         
         """
-        self.t_span = t_span
+        self.N = N # Number of orbits
         self.dt = dt
         self.correction = correction
         self.two_body_instance = two_body_instance
-        self.sol = None
+        self.T = self.two_body_instance.T
+        self.t_span = [0, N*self.T]
+        
 
     @staticmethod
     def slope(t, s, correction, M):
@@ -136,7 +138,7 @@ class Integrators:
         
         slope = np.concatenate([v, term1*r])
         return slope 
-    
+
     def trapezoidal(self):
         """
 
@@ -144,7 +146,8 @@ class Integrators:
         f=self.slope
         t_span = self.t_span
         dt = self.dt
-        s0 = self.s0
+        
+        s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
 
         # Initialize time array
@@ -162,8 +165,6 @@ class Integrators:
             s_next = s[j] + (dt/2) * (f(t, s[j], self.correction, M) + f(t + dt, s_next, self.correction, M))
             
             s[j+1] = s_next
-            
-        self.sol = s
         return s
     
     def RK3(self):
@@ -173,7 +174,8 @@ class Integrators:
         f = self.slope
         t_span = self.t_span
         dt = self.dt
-        s0 = self.s0
+
+        s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
         
         t_axis = np.arange(t_span[0], t_span[1] + dt, dt)
@@ -191,8 +193,7 @@ class Integrators:
         
             # Combine slopes
             s[j+1] = s[j] + (dt / 6) * (k1 + 4*k2 + k3)
-        
-        self.sol = s
+
         return s
     
     def scipy_integator(self):
@@ -203,9 +204,11 @@ class Integrators:
         method='DOP853'
         t_span = self.t_span
         dt = self.dt    
-        s0 = self.s0
         slope = self.slope_scipy
         correction = self.correction
+
+
+        s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
 
         # Flatten initial condition
@@ -221,21 +224,67 @@ class Integrators:
         s[:, 0, :] = sol.y[:2, :].T  # Position components
         s[:, 1, :] = sol.y[2:, :].T  # Velocity components
 
-        self.sol = s
         return s
 
-    def plot_orbit(self, save=False):
+class RunIntegrator:
+    """
+    """
+    def __init__(self, N, dt, correction, two_body_instance, method, output_dir="."):
         """
         """
-        sol = self.sol
-        s0 = self.s0
-        a = self.two_body_instance.a
-        R_s = self.two_body_instance.R_s
+        self.N = N # Number of orbits
+        self.dt = dt
+        self.correction = correction
+        self.two_body_instance = two_body_instance
+        self.T = self.two_body_instance.T
+        self.s0 = self.two_body_instance.s0
+        self.t_span = [0, N*self.T]
+        self.method = method
+        self.output_dir = output_dir
 
+        self.sol = None
+
+    def run(self, save=True):
+        """
+        
+        """
+        if self.method == "trapezoidal":
+            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            self.sol = integrator.trapezoidal()
+        elif self.method == "RK3":
+            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            self.sol = integrator.RK3()
+        else:
+            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            self.sol = integrator.scipy_integator()
+
+        # Unpack the solution
+        x = self.sol[:, 0, 0]
+        y = self.sol[:, 0, 1]
+        vx = self.sol[:, 1, 0]
+        vy = self.sol[:, 1, 1]
+
+        t = np.arange(0, self.N * self.T + self.dt, self.dt)
+        # Create a DataFrame and save it to a CSV file
+        dic = {"t": t, "x": x, "y": y, "vx": vx, "vy": vy}
+        df = pd.DataFrame(dic)
+        df.to_csv(f"{self.output_dir}/orbit.csv", index=False)
+        # Save a plot    
+        self.plot_orbit(self.sol, self.s0, self.two_body_instance.a, self.two_body_instance.R_s, self.correction, save)
+    
+        return self.sol
+    
+    @staticmethod
+    def plot_orbit(sol, s0, a, R_s, correction, save):
+        """
+        """
         # Unpack initial conditions
         r0 = s0[0]
-        v0 = s0[1]
-        correction = self.correction
+        
+        # Unpack the solution
+        x = sol[:, 0, 0]
+        y = sol[:, 0, 1]
+
 
         # Create plot
         fig, ax = plt.subplots(figsize=(8,8))
@@ -250,9 +299,10 @@ class Integrators:
         ax.add_patch(schwarzschild_circle)
         # Plot initial position of orbiting body
         ax.scatter(r0[0], r0[1], color='b', s=50, label="Planet")
-        ax.plot(sol[:,0,0],sol[:,0,1], color = "orange", label = "orbit")
+        ax.plot(x, y, color = "orange", label = "orbit")
         ax.legend()
         if save:
             plt.savefig(f"{"relativistic" if correction else "classical"}_orbit.png")
 
-        plt.show()
+        #plt.show()
+        return fig
