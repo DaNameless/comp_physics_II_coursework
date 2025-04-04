@@ -8,10 +8,8 @@ import sympy as sp
 from scipy.integrate import solve_ivp, simpson
 from scipy.optimize import fsolve
 import argparse
-
-# To see the outputs in latex format, we use:
-from sympy.interactive import printing
-printing.init_printing(use_latex = True)
+from matplotlib import animation
+from IPython.display import Image as display_image, HTML
 
 # Let's use an specific style for the plots!
 plt.style.use(['science','notebook','grid'])
@@ -55,6 +53,7 @@ class TwoBodyProblem:
         self.R_s = (2*G*self.M)/(C**2)
         self.r0 = np.array([0, a*(1-e)])
         self.v0 = np.array([-np.sqrt((G*self.M/a)*((1+e)/(1-e))),0])
+        self.s0 = np.array([self.r0, self.v0])
     
     def plot_grid(self, save=False):
         """
@@ -68,7 +67,7 @@ class TwoBodyProblem:
         # Create plot
         fig, ax = plt.subplots(figsize=(8,8))
         ax.set_xlim(-2 * a, 2 * a)
-        ax.set_ylim(-2 * a, 2 * a)
+        ax.set_ylim(-2.5 * a, 1.2 * a)
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Initial Two-Body Problem Setup")
@@ -98,7 +97,7 @@ class Integrators:
         self.correction = correction
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
-        self.t_span = [0, N*self.T]
+        self.t_span = [0, self.N*self.T]
         
 
     @staticmethod
@@ -165,7 +164,8 @@ class Integrators:
             s_next = s[j] + (dt/2) * (f(t, s[j], self.correction, M) + f(t + dt, s_next, self.correction, M))
             
             s[j+1] = s_next
-        return s
+            
+        return s, t_axis
     
     def RK3(self):
         """
@@ -194,7 +194,7 @@ class Integrators:
             # Combine slopes
             s[j+1] = s[j] + (dt / 6) * (k1 + 4*k2 + k3)
 
-        return s
+        return s, t_axis
     
     def scipy_integator(self):
         """
@@ -216,15 +216,14 @@ class Integrators:
 
         t_eval = np.arange(t_span[0], t_span[1]+dt, dt)
         
-        sol = solve_ivp(slope, args=(correction, M), t_span=(t_eval[0],t_eval[-1]), y0 =s0_flat, method=method, t_eval=t_eval)#, r_tol=1e-7, a_tol=1e-7)
-        
+        sol = solve_ivp(slope, args=(correction, M), t_span=(t_eval[0],t_eval[-1]), y0 =s0_flat, method=method, t_eval=t_eval)# r_tol = 1e-8 ,a_tol=1e-8)
         # Reshape solution to (n_steps, 2, 2)
         n_steps = len(sol.t)
         s = np.zeros((n_steps, 2, 2))
         s[:, 0, :] = sol.y[:2, :].T  # Position components
         s[:, 1, :] = sol.y[2:, :].T  # Velocity components
 
-        return s
+        return s, sol.t
 
 class RunIntegrator:
     """
@@ -238,7 +237,10 @@ class RunIntegrator:
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
         self.s0 = self.two_body_instance.s0
-        self.t_span = [0, N*self.T]
+        self.a = self.two_body_instance.a
+        self.R_s = self.two_body_instance.R_s
+        self.e = self.two_body_instance.e
+        self.t_span = [0, self.N*self.T]
         self.method = method
         self.output_dir = output_dir
 
@@ -259,18 +261,23 @@ class RunIntegrator:
             self.sol = integrator.scipy_integator()
 
         # Unpack the solution
-        x = self.sol[:, 0, 0]
-        y = self.sol[:, 0, 1]
-        vx = self.sol[:, 1, 0]
-        vy = self.sol[:, 1, 1]
-
-        t = np.arange(0, self.N * self.T + self.dt, self.dt)
+        x = self.sol[0][:, 0, 0]
+        y = self.sol[0][:, 0, 1]
+        vx = self.sol[0][:, 1, 0]
+        vy = self.sol[0][:, 1, 1]
+        t_eval = self.sol[1]
+        params = np.zeros(t_eval.shape)
+        params[0] = self.a
+        params[1] = self.e
+        params[2] = self.N
+        params[3] = self.R_s
+        
         # Create a DataFrame and save it to a CSV file
-        dic = {"t": t, "x": x, "y": y, "vx": vx, "vy": vy}
+        dic = {"t": t_eval, "x": x, "y": y, "vx": vx, "vy": vy, "parameters": params}
         df = pd.DataFrame(dic)
         df.to_csv(f"{self.output_dir}/orbit.csv", index=False)
         # Save a plot    
-        self.plot_orbit(self.sol, self.s0, self.two_body_instance.a, self.two_body_instance.R_s, self.correction, save)
+        self.plot_orbit(self.sol[0], self.s0, self.a, self.R_s, self.correction, save)
     
         return self.sol
     
@@ -288,8 +295,8 @@ class RunIntegrator:
 
         # Create plot
         fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-2 * a, 2 * a)
-        ax.set_ylim(-2 * a, 2 * a)
+        ax.set_xlim(- 2* a, 2 * a)
+        ax.set_ylim(-3 * a, 1.2 * a)
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
@@ -306,3 +313,69 @@ class RunIntegrator:
 
         #plt.show()
         return fig
+    
+class Animation_TB:
+    """ 
+    """
+    def __init__(self, orbit_file_dir, save_dir=None, fps=30):
+        """
+        """
+        self.orbit_file_dir = orbit_file_dir
+        self.save_dir = save_dir
+        self.fps = fps
+        self.data = pd.read_csv(orbit_file_dir)
+        self.t = np.array(self.data["t"])
+        self.dt = self.t[1] - self.t[0]
+        self.x = np.array(self.data["x"])
+        self.y = np.array(self.data["y"])
+        self.vx = np.array(self.data["vx"])
+        self.vy = np.array(self.data["vy"])
+        self.a = self.data["parameters"][0]
+        self.e = self.data["parameters"][1]
+        self.N = self.data["parameters"][2]
+        self.R_s = self.data["parameters"][3]
+
+    def animate(self):
+        """
+        """
+        save_dir = self.save_dir
+        # Create plot
+        fig, ax = plt.subplots(figsize=(8,8))
+        ax.set_xlim(- 2* self.a, 2 * self.a)
+        ax.set_ylim(-1.5 * self.a, 1.3 * self.a)
+        ax.set_xlabel("x [AU]")
+        ax.set_ylabel("y [AU]")
+        ax.set_title("Two-Body Problem Orbit")
+        # Plot central black hole and Schwarzschild radius
+        ax.scatter(0, 0, color='k', s=100, label="Black Hole")
+        schwarzschild_circle = plt.Circle((0, 0), self.R_s, color='r', fill=False, linestyle='dashed', label="Schwarzschild Radius")
+        ax.add_patch(schwarzschild_circle)
+        # Plot initial position of orbiting body
+        ax.plot(self.x, self.y, color = "orange", label = "orbit", linestyle='--', alpha=0.5)
+        point, = ax.plot([], [], color = "b", label = "Planet", marker = "o", markersize = 10)
+        ax.legend()
+        
+        # Function to animate the point
+        def animate_point(i):
+            x_i = self.x[i]
+            y_i = self.y[i]
+            point.set_data([x_i], [y_i])  # Pass as sequences (list)
+            return point,
+    
+        # Downsample the data
+        step = len(self.t)//50  # Adjust this value to control the downsampling
+        print(len(self.t), step)
+        sampled_indices = range(0, len(self.t), step)
+
+        # Create the animation
+        movie_wave = animation.FuncAnimation(fig, animate_point, frames=sampled_indices, interval=50, blit=True)
+
+        # Save the animation as GIF
+        if save_dir is not None:
+            gif_output = save_dir + "/orbit_trajectory.gif"
+            movie_wave.save(gif_output, writer="pillow", fps=24)
+            
+        plt.close()
+        
+        return HTML(movie_wave.to_jshtml())
+    
