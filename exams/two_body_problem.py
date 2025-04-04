@@ -48,26 +48,26 @@ class TwoBodyProblem:
         self.e = e
         
         # Let's define some fixed variables
-        self.G = 4*(np.pi**2)
         self.T = 2*np.pi*np.sqrt((a**3)/(G*self.M)) #[years]
         self.R_s = (2*G*self.M)/(C**2)
         self.r0 = np.array([0, a*(1-e)])
         self.v0 = np.array([-np.sqrt((G*self.M/a)*((1+e)/(1-e))),0])
         self.s0 = np.array([self.r0, self.v0])
     
-    def plot_grid(self, save=False):
+    def plot_grid(self, save=False, output_dir="."):
         """
         
         """
         a = self.a
+        e = self.e
         R_s = self.R_s
         r0 = self.r0
 
 
         # Create plot
         fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-2 * a, 2 * a)
-        ax.set_ylim(-2.5 * a, 1.2 * a)
+        ax.set_xlim(-1.2 * a * np.sqrt(1-e**2), 1.2 * a * np.sqrt(1-e**2))
+        ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Initial Two-Body Problem Setup")
@@ -79,8 +79,7 @@ class TwoBodyProblem:
         ax.scatter(r0[0], r0[1], color='b', s=25, label="Planet")
         ax.legend()
         if save:
-            plt.savefig("initial_TBP.png")
-        plt.show()
+            plt.savefig(f"{output_dir}/orbit_ini.png")
 
 
 
@@ -228,7 +227,7 @@ class Integrators:
 class RunIntegrator:
     """
     """
-    def __init__(self, N, dt, correction, two_body_instance, method, output_dir="."):
+    def __init__(self, N, dt, correction, two_body_instance, method, output_dir, save):
         """
         """
         self.N = N # Number of orbits
@@ -243,10 +242,11 @@ class RunIntegrator:
         self.t_span = [0, self.N*self.T]
         self.method = method
         self.output_dir = output_dir
+        self.save = save
 
         self.sol = None
 
-    def run(self, save=True):
+    def run(self):
         """
         
         """
@@ -277,12 +277,12 @@ class RunIntegrator:
         df = pd.DataFrame(dic)
         df.to_csv(f"{self.output_dir}/orbit.csv", index=False)
         # Save a plot    
-        self.plot_orbit(self.sol[0], self.s0, self.a, self.R_s, self.correction, save)
+        self.plot_orbit(self.sol[0], self.s0, self.a, self.e, self.R_s, self.correction, self.save, self.output_dir)
     
         return self.sol
     
     @staticmethod
-    def plot_orbit(sol, s0, a, R_s, correction, save):
+    def plot_orbit(sol, s0, a, e, R_s, correction, save, output_dir):
         """
         """
         # Unpack initial conditions
@@ -295,8 +295,8 @@ class RunIntegrator:
 
         # Create plot
         fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(- 2* a, 2 * a)
-        ax.set_ylim(-3 * a, 1.2 * a)
+        ax.set_xlim(-1.2 * a * np.sqrt(1-e**2), 1.2 * a * np.sqrt(1-e**2))
+        ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
@@ -309,9 +309,8 @@ class RunIntegrator:
         ax.plot(x, y, color = "orange", label = "orbit")
         ax.legend()
         if save:
-            plt.savefig(f"{"relativistic" if correction else "classical"}_orbit.png")
-
-        #plt.show()
+            orbit_type = "relativistic" if correction else "classical"
+            plt.savefig(f"{output_dir}/{orbit_type}_orbit.png")
         return fig
     
 class Animation_TB:
@@ -341,8 +340,8 @@ class Animation_TB:
         save_dir = self.save_dir
         # Create plot
         fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(- 2* self.a, 2 * self.a)
-        ax.set_ylim(-1.5 * self.a, 1.3 * self.a)
+        ax.set_xlim(-1.2 * self.a * np.sqrt(1-self.e**2), 1.2 * self.a * np.sqrt(1-self.e**2))
+        ax.set_ylim(-1.2 * self.a * (1+self.e), 1.2 * self.a * (1-self.e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
@@ -364,7 +363,7 @@ class Animation_TB:
     
         # Downsample the data
         step = len(self.t)//50  # Adjust this value to control the downsampling
-        print(len(self.t), step)
+
         sampled_indices = range(0, len(self.t), step)
 
         # Create the animation
@@ -372,10 +371,54 @@ class Animation_TB:
 
         # Save the animation as GIF
         if save_dir is not None:
-            gif_output = save_dir + "/orbit_trajectory.gif"
+            gif_output = save_dir + "/orbit.gif"
             movie_wave.save(gif_output, writer="pillow", fps=24)
             
         plt.close()
         
         return HTML(movie_wave.to_jshtml())
+    
+
+# Main function to run the code
+if __name__ == "__main__":
+
+    # Parsing arguments
+    parser = argparse.ArgumentParser(description="Two Body Problem Solver")
+    parser.add_argument("-N", "--N", type=int, default=1, help="Number of orbits")
+    parser.add_argument("-a", "--a", type=float, default=1, help="Semi-major axis")
+    parser.add_argument("-e", "--e", type=float, default=0, help="Eccentricity")
+    parser.add_argument("-M", "--M", type=float, default=1, help="Mass of the Black Hole")
+    parser.add_argument("-dt", "--dt", type=float, default=0.01, help="Time step")
+    parser.add_argument("-m", "--method", type=str, default="scipy", help="Integration method: trapezoidal, RK3, or scipy")
+    parser.add_argument("-c", "--correction", action="store_true", help="Use relativistic correction")
+    parser.add_argument("-save_init", "--save_init_plot", action="store_true", help="Save the initial setup plot")
+    parser.add_argument("-save_plot", "--save_plot", action="store_true", help="Save the orbit plot")
+    parser.add_argument("-dir", "--output_dir", type=str, default=".", help="Output directory to save the result files, i.e, orbit.csv, orbit.png, and orbit.gif")
+    parser.add_argument("-anim", "--animate", action="store_true", help="Create animation and save it")
+    args = parser.parse_args()
+    # Extracting arguments
+    N = args.N
+    a = args.a
+    e = args.e
+    M = args.M
+    dt = args.dt
+    method = args.method
+    correction = args.correction
+    save_init = args.save_init_plot
+    save = args.save_plot
+    output_dir = args.output_dir
+    animate = args.animate
+    # Create the two body instance
+    two_body_instance = TwoBodyProblem(M, a, e)
+    # Plot the grid
+    two_body_instance.plot_grid(save_init, output_dir)
+    # Run the integrator
+    run_integrator = RunIntegrator(N, dt, correction, two_body_instance, method, output_dir, save)
+    sol = run_integrator.run()
+    
+    # Create the animation
+    if animate:
+        orbit_file_dir = f"{output_dir}/orbit.csv"
+        animation_instance = Animation_TB(orbit_file_dir, output_dir)
+        animation_instance.animate()
     
