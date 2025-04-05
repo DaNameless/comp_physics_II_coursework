@@ -74,7 +74,7 @@ class TwoBodyProblem:
         # Create plot
         fig, ax = plt.subplots(figsize=(10,10))
         ax.set_xlim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
-        ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
+        ax.set_ylim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Initial Two-Body Problem Setup")
@@ -352,8 +352,12 @@ class RunIntegrator:
 
         # Create plot
         fig, ax = plt.subplots(figsize=(10,10))
-        ax.set_xlim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
-        ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
+        ax.set_xlim(-1.6 * a * np.sqrt(1 - e**2), 1.6 * a * np.sqrt(1 - e**2))
+        
+        # To avoid the orbit to be cut in half, we need to set the limits
+        # to the maximum and minimum values of the orbit
+        #ax.set_ylim(-1.2 * self.a * (1 + self.e), 1.2 * self.a * (1 - self.e))   # This would work if the orbit is classical
+        ax.set_ylim(1.2 * min(y) , 1.4 * a * (1 - e)) # This will work for both classical and relativistic orbits
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
@@ -410,8 +414,13 @@ class Animation_TB:
 
         # Create plot
         fig, ax = plt.subplots(figsize=(10,10))
-        ax.set_xlim(-1.4 * self.a * np.sqrt(1 - self.e**2), 1.4 * self.a * np.sqrt(1 - self.e**2))
-        ax.set_ylim(-1.2 * self.a * (1 + self.e), 1.2 * self.a * (1 - self.e))
+        ax.set_xlim(-1.6 * self.a * np.sqrt(1 - self.e**2), 1.6 * self.a * np.sqrt(1 - self.e**2))
+        
+        # To avoid the orbit to be cut in half, we need to set the limits
+        # to the maximum and minimum values of the orbit
+        #ax.set_ylim(-1.2 * self.a * (1 + self.e), 1.2 * self.a * (1 - self.e))   # This would work if the orbit is classical
+        ax.set_ylim(1.2 * min(self.y) , 1.4 * self.a * (1 - self.e)) # This will work for both classical and relativistic orbits
+        
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
@@ -500,7 +509,8 @@ class Animation_TB:
             anim.save(gif_output, writer="pillow", fps=20, dpi=100)
 
         plt.close()
-        return #HTML(anim.to_jshtml())
+
+        return anim
         
 
 
