@@ -1,4 +1,4 @@
-#Importing necessary libraries
+#Importing necessary libraries for calculations, plotting and writing files
 import os
 import numpy as np 
 import matplotlib.pyplot as plt
@@ -12,10 +12,11 @@ from matplotlib import animation
 from IPython.display import Image as display_image, HTML
 import pyvista as pv
 
-
+# Modules for parsing the config file and command line arguments
 import argparse
 import configparser
 from pathlib import Path
+
 
 # Let's use an specific style for the plots!
 plt.style.use(['science','notebook','grid'])
@@ -145,32 +146,53 @@ class Integrators:
 
     def trapezoidal(self):
         """
-
+        
         """
-        f=self.slope
+        f = self.slope
         t_span = self.t_span
         dt = self.dt
         
         s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
 
-        # Initialize time array
-        t_axis = np.arange(t_span[0], t_span[1] + dt, dt)
-        n = len(t_axis)
+        # Initialize lists to store results dynamically
+        s_list = [s0.copy()]
+        t_list = [t_span[0]]
 
-        # Initialize solution array and set initial condition
-        s = np.zeros((n, len(s0), len(s0[0])))
-        s[0] = s0
-        
-        for j in range(n - 1):
-            t = t_axis[j]
+        # Maximum allowed value before we consider it diverged
+        MAX_VALUE = 1e5
 
-            s_next = s[j] + dt * f(t, s[j], self.correction, M)
-            s_next = s[j] + (dt/2) * (f(t, s[j], self.correction, M) + f(t + dt, s_next, self.correction, M))
+        for j in range(1, int((t_span[1] - t_span[0]) / dt) + 1):
+            t_prev = t_list[-1]
+            s_prev = s_list[-1]
             
-            s[j+1] = s_next
-            
-        return s, t_axis
+            try:
+                # Predictor step
+                s_predict = s_prev + dt * f(t_prev, s_prev, self.correction, M)
+                
+                # Corrector step (trapezoidal rule)
+                s_next = s_prev + (dt/2) * (
+                    f(t_prev, s_prev, self.correction, M) + 
+                    f(t_prev + dt, s_predict, self.correction, M)
+                )
+                
+                # Check for divergence
+                if (np.any(np.isnan(s_next)) or (np.any(np.abs(s_next-s_predict) > MAX_VALUE))):
+                    break
+                    
+                # Store results
+                s_list.append(s_next)
+                t_list.append(t_prev + dt)
+                
+            except (FloatingPointError, ValueError):
+                # Handle numerical errors (overflow, etc.)
+                break
+
+        # Convert lists to numpy arrays
+        s = np.array(s_list)
+        t_array = np.array(t_list)
+
+        return s, t_array
     
     def RK3(self):
         """
@@ -182,24 +204,43 @@ class Integrators:
 
         s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
-        
-        t_axis = np.arange(t_span[0], t_span[1] + dt, dt)
-        n = len(t_axis)
-        
-        s = np.zeros((n, len(s0), len(s0[0])))
-        s[0] = s0
-        
-        for j in range(n - 1):
-            t = t_axis[j]
-                        # RK4 stages
-            k1 = f(t, s[j], self.correction, M)
-            k2 = f(t + dt/2, s[j] + (dt/2)*k1, self.correction, M)
-            k3 = f(t + dt, s[j]-dt*k1 + 2*dt*k2, self.correction, M)
-        
-            # Combine slopes
-            s[j+1] = s[j] + (dt / 6) * (k1 + 4*k2 + k3)
 
-        return s, t_axis
+        # Initialize lists to store results dynamically
+        s_list = [s0.copy()]
+        t_list = [t_span[0]]
+
+        # Maximum allowed value before we consider it diverged
+        MAX_VALUE = 1e5 
+
+        for j in range(1, int((t_span[1] - t_span[0]) / dt) + 1):
+            t_prev = t_list[-1]
+            s_prev = s_list[-1]
+            
+            # RK4 stages
+            try:
+                k1 = f(t_prev, s_prev, self.correction, M)
+                k2 = f(t_prev + dt/2, s_prev + (dt/2)*k1, self.correction, M)
+                k3 = f(t_prev + dt, s_prev - dt*k1 + 2*dt*k2, self.correction, M)
+                
+                # Compute next step
+                s_next = s_prev + (dt / 6) * (k1 + 4*k2 + k3)
+                
+                # Check for divergence
+                if (np.any(np.isnan(s_next)) or (np.any(np.abs(s_next-s_prev) > MAX_VALUE))):
+                    break
+                    
+                # Store results
+                s_list.append(s_next)
+                t_list.append(t_prev + dt)
+            except (FloatingPointError, ValueError):
+                # Handle numerical errors (overflow, etc.)
+                break
+
+        # Convert lists to numpy arrays
+        s = np.array(s_list)
+        t_array = np.array(t_list)
+
+        return s, t_array
     
     def scipy_integator(self):
         """
@@ -459,11 +500,9 @@ class Animation_TB:
             anim.save(gif_output, writer="pillow", fps=20, dpi=100)
 
         plt.close()
-        return HTML(anim.to_jshtml())
+        return #HTML(anim.to_jshtml())
         
-import argparse
-import configparser
-from pathlib import Path
+
 
 def parse_config_file(config_path):
     config = configparser.ConfigParser()
@@ -484,11 +523,11 @@ def parse_config_file(config_path):
     return defaults
 
 if __name__ == "__main__":
-    # First parse config file if it exists
+    # Parse config file if it exists
     config_path = Path('config.ini')
     defaults = parse_config_file(config_path) if config_path.exists() else {}
 
-    # Then parse command line arguments (which will override config file)
+    # Parse command line arguments (which will override config file)
     parser = argparse.ArgumentParser(description="Two Body Problem Solver")
     parser.add_argument("-c", "--config", type=str, default="config.ini", help="Path to config file")
     parser.add_argument("-N", "--N", type=int, default=defaults.get('N', 1), help="Number of orbits")
@@ -517,7 +556,6 @@ if __name__ == "__main__":
             if getattr(args, key, None) == parser.get_default(key):
                 setattr(args, key, value)
     
-    # Rest of your code remains the same...
     N = args.N
     a = args.a
     e = args.e
