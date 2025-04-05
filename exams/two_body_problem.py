@@ -323,6 +323,8 @@ class RunIntegrator:
         if save:
             orbit_type = "relativistic" if correction else "classical"
             plt.savefig(f"{output_dir}/{orbit_type}_orbit.png")
+
+        plt.close()
         return fig
     
 class Animation_TB:
@@ -359,101 +361,102 @@ class Animation_TB:
         self.correction = bool(self.orbit.field_data['correction_enabled'][0])
 
     def animate(self):
-        """
-        """
         save_dir = self.save_dir
+
         # Create plot
         fig, ax = plt.subplots(figsize=(10,10))
-        ax.set_xlim(-1.4 * self.a * np.sqrt(1-self.e**2), 1.4 * self.a * np.sqrt(1-self.e**2))
-        ax.set_ylim(-1.2 * self.a * (1+self.e), 1.2 * self.a * (1-self.e))
+        ax.set_xlim(-1.4 * self.a * np.sqrt(1 - self.e**2), 1.4 * self.a * np.sqrt(1 - self.e**2))
+        ax.set_ylim(-1.2 * self.a * (1 + self.e), 1.2 * self.a * (1 - self.e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
-        # Plot central black hole and Schwarzschild radius
+
+        # Central body and Schwarzschild radius
         ax.scatter(0, 0, color='k', s=100, label="Black Hole")
         schwarzschild_circle = plt.Circle((0, 0), self.R_s, color='r', fill=False, linestyle='dashed', label="Schwarzschild Radius")
         ax.add_patch(schwarzschild_circle)
-        # Plot initial position of orbiting body
-        ax.plot(self.x, self.y, color = "orange", label = "orbit", linestyle='--', alpha=0.5)
 
-        # Plot current position of orbiting body
+        # Full orbit path (static background)
+        ax.plot(self.x, self.y, color="orange", label="Orbit", linestyle='--', alpha=0.5)
+
+        # Dynamic elements
         point, = ax.plot([], [], 'bo', markersize=10, label="Planet", zorder=10)
-        
-    
-        # Calculate velocity scaling factor
+        trail_line, = ax.plot([], [], color='blue', linewidth=1.5, alpha=0.7, label="Trajectory", zorder=5)
+
+        # Velocity vector setup
         max_vel = max(np.max(np.abs(self.vx)), np.max(np.abs(self.vy)))
-        arrow_scale = 0.15 * self.a / max_vel  # Arrow length proportional to orbit size
-    
-        # 2. Create quiver with fixed scale and larger arrow props
-        velocity_arrow = ax.quiver([], [], [], [], 
-                                color='dodgerblue', 
-                                scale_units='xy', 
-                                angles='xy', 
-                                scale=1/arrow_scale,
-                                width=0.008,  # Thicker arrows
-                                headwidth=4,  # Larger arrow heads
-                                headlength=5,
-                                headaxislength=4.5,
+        arrow_scale = 0.2 * self.a / max_vel  # Smaller scale for clarity
+
+        velocity_arrow = ax.quiver(0, 0, 0, 0,\
+                                color='dodgerblue',\
+                                angles='xy',\
+                                scale_units='xy',\
+                                scale=1,\
+                                width=0.008,\
+                                headwidth=4,\
+                                headlength=5,\
+                                headaxislength=4.5,\
                                 zorder=9)
-            
-        # Create dynamic legend text
-        legend_text = ax.text(0.02, 0.95, "", transform=ax.transAxes, fontsize=10,
-                            verticalalignment='center', bbox=dict(facecolor='white', alpha=0.8))
+
+        # Dynamic text
+        legend_text = ax.text(0.02, 0.97, "", transform=ax.transAxes, fontsize=9, linespacing=1.5, verticalalignment='top', horizontalalignment='left',\
+                                bbox=dict(boxstyle='round,pad=0.4',\
+                                    facecolor='whitesmoke',\
+                                    edgecolor='gray',\
+                                    linewidth=1,\
+                                    alpha=0.95\
+                                )
+                            )
 
         ax.legend()
-        
-        # Adaptive downsampling
+
+        # Adaptive sampling
         total_frames = len(self.t)
-        target_frames = 100  # Aim for about 100 frames
-        
+        target_frames = 100
         if total_frames <= target_frames:
-            # No downsampling needed if already short
             step = 1
             sampled_indices = range(total_frames)
         else:
-            # Calculate step size to get close to target frames
             step = max(1, total_frames // target_frames)
             sampled_indices = range(0, total_frames, step)
 
-        # Function to animate the point and velocity vector
+        # Frame update function
         def animate_frame(i):
             x_i = self.x[i]
             y_i = self.y[i]
             vx_i = self.vx[i]
             vy_i = self.vy[i]
-            
-            # Update planet position
+            v_mod_i = np.sqrt(vx_i**2 + vy_i**2)
+
+            # Update planet and trail
             point.set_data([x_i], [y_i])
-            
-            ## Update velocity arrow (critical fix - use scaled values)
-            scaled_vx = self.vx[i] * arrow_scale
-            scaled_vy = self.vy[i] * arrow_scale
-            velocity_arrow.set_offsets([[self.x[i], self.y[i]]])
-            velocity_arrow.set_UVC(scaled_vx, scaled_vy)
-            
-            # Update legend text with current values
+            trail_line.set_data(self.x[:i+1], self.y[:i+1])
+
+            # Update velocity vector (arrow from current position)
+            velocity_arrow.set_offsets([x_i, y_i])
+            velocity_arrow.set_UVC(vx_i * arrow_scale, vy_i * arrow_scale)
+
+            # Update text
             legend_text.set_text(
                 f"Current Position [AU]:\n"
-                f"(x = {x_i:.3f},y = {y_i:.3f})\n"
-                f"Current Velocity [AU/yr]:\n"
-                f"(vx = {vx_i:.3f}, vy = {vy_i:.3f})"
+                f"(x = {x_i:.3f}, y = {y_i:.3f})\n"
+                f"Current Velocity [AU/yr]: \n v = {v_mod_i:.3e}\n"
+                f"(vx = {vx_i:.3e}, vy = {vy_i:.3e})"
             )
-            
-            return point, velocity_arrow, legend_text
-    
-        # Create the animation
+
+            return point, trail_line, velocity_arrow, legend_text
+
+        # Animate
         anim = animation.FuncAnimation(fig, animate_frame, frames=sampled_indices, interval=50, blit=True, repeat=True)
 
-        # Save the animation as GIF
         if save_dir is not None:
             os.makedirs(save_dir, exist_ok=True)
             gif_output = os.path.join(save_dir, "orbit.gif")
             anim.save(gif_output, writer="pillow", fps=20, dpi=100)
-            
+
         plt.close()
-        
         return HTML(anim.to_jshtml())
-    
+        
 
 # Main function to run the code
 if __name__ == "__main__":
