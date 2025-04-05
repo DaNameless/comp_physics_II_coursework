@@ -8,10 +8,14 @@ import numpy.linalg as la
 import sympy as sp
 from scipy.integrate import solve_ivp, simpson
 from scipy.optimize import fsolve
-import argparse
 from matplotlib import animation
 from IPython.display import Image as display_image, HTML
 import pyvista as pv
+
+
+import argparse
+import configparser
+from pathlib import Path
 
 # Let's use an specific style for the plots!
 plt.style.use(['science','notebook','grid'])
@@ -457,24 +461,63 @@ class Animation_TB:
         plt.close()
         return HTML(anim.to_jshtml())
         
+import argparse
+import configparser
+from pathlib import Path
 
-# Main function to run the code
+def parse_config_file(config_path):
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    
+    defaults = {
+        'N': config.getint('two_body', 'N', fallback=1),
+        'a': config.getfloat('two_body', 'a', fallback=1.0),
+        'e': config.getfloat('two_body', 'e', fallback=0.0),
+        'M': config.getfloat('two_body', 'M', fallback=1.0),
+        'method': config.get('two_body', 'method', fallback='scipy'),
+        'correction': config.getboolean('two_body', 'correction', fallback=False),
+        'save_init_plot': config.getboolean('two_body', 'save_init_plot', fallback=False),
+        'save_plot': config.getboolean('two_body', 'save_plot', fallback=False),
+        'output_dir': config.get('two_body', 'output_dir', fallback='.'),
+        'animate': config.getboolean('two_body', 'animate', fallback=False),
+    }
+    return defaults
+
 if __name__ == "__main__":
+    # First parse config file if it exists
+    config_path = Path('config.ini')
+    defaults = parse_config_file(config_path) if config_path.exists() else {}
 
-    # Parsing arguments
+    # Then parse command line arguments (which will override config file)
     parser = argparse.ArgumentParser(description="Two Body Problem Solver")
-    parser.add_argument("-N", "--N", type=int, default=1, help="Number of orbits")
-    parser.add_argument("-a", "--a", type=float, default=1, help="Semi-major axis")
-    parser.add_argument("-e", "--e", type=float, default=0, help="Eccentricity")
-    parser.add_argument("-M", "--M", type=float, default=1, help="Mass of the Black Hole")
-    parser.add_argument("-m", "--method", type=str, default="scipy", help="Integration method: trapezoidal, RK3, or scipy")
-    parser.add_argument("-c", "--correction", action="store_true", help="Use relativistic correction")
-    parser.add_argument("-save_init", "--save_init_plot", action="store_true", help="Save the initial setup plot")
-    parser.add_argument("-save_plot", "--save_plot", action="store_true", help="Save the orbit plot")
-    parser.add_argument("-dir", "--output_dir", type=str, default=".", help="Output directory to save the result files, i.e, orbit.csv, orbit.png, and orbit.gif")
-    parser.add_argument("-anim", "--animate", action="store_true", help="Create animation and save it")
+    parser.add_argument("-c", "--config", type=str, default="config.ini", help="Path to config file")
+    parser.add_argument("-N", "--N", type=int, default=defaults.get('N', 1), help="Number of orbits")
+    parser.add_argument("-a", "--a", type=float, default=defaults.get('a', 1), help="Semi-major axis")
+    parser.add_argument("-e", "--e", type=float, default=defaults.get('e', 0), help="Eccentricity")
+    parser.add_argument("-M", "--M", type=float, default=defaults.get('M', 1), help="Mass of the Black Hole")
+    parser.add_argument("-m", "--method", type=str, default=defaults.get('method', 'scipy'), help="Integration method")
+    parser.add_argument("-corr", "--correction", action='store_true', default=defaults.get('correction', False), 
+                       help="Use relativistic correction")
+    parser.add_argument("-save_init", "--save_init_plot", action='store_true', 
+                       default=defaults.get('save_init_plot', False), help="Save the initial setup plot")
+    parser.add_argument("-save_plot", "--save_plot", action='store_true', 
+                       default=defaults.get('save_plot', False), help="Save the orbit plot")
+    parser.add_argument("-dir", "--output_dir", type=str, default=defaults.get('output_dir', '.'), 
+                       help="Output directory for results")
+    parser.add_argument("-anim", "--animate", action='store_true', default=defaults.get('animate', False), 
+                       help="Create animation")
+    
     args = parser.parse_args()
-    # Extracting arguments
+    
+    # If a different config file was specified, use it
+    if args.config != 'config.ini' or not config_path.exists():
+        defaults = parse_config_file(args.config)
+        # Update args with values from the specified config file
+        for key, value in defaults.items():
+            if getattr(args, key, None) == parser.get_default(key):
+                setattr(args, key, value)
+    
+    # Rest of your code remains the same...
     N = args.N
     a = args.a
     e = args.e
@@ -485,17 +528,13 @@ if __name__ == "__main__":
     save = args.save_plot
     output_dir = args.output_dir
     animate = args.animate
-    # Create the two body instance
+    
     two_body_instance = TwoBodyProblem(M, a, e)
-    # Plot the grid
     two_body_instance.plot_grid(save_init, output_dir)
-    # Run the integrator
     run_integrator = RunIntegrator(N, correction, two_body_instance, method, output_dir, save)
     sol = run_integrator.run()
     
-    # Create the animation
     if animate:
         orbit_file_dir = f"{output_dir}/orbit.vtk"
         animation_instance = Animation_TB(orbit_file_dir, output_dir)
         animation_instance.animate()
-    
