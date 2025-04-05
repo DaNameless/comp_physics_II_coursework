@@ -1,4 +1,5 @@
 #Importing necessary libraries
+import os
 import numpy as np 
 import matplotlib.pyplot as plt
 import scienceplots # Just for aesthetic purposes
@@ -10,6 +11,7 @@ from scipy.optimize import fsolve
 import argparse
 from matplotlib import animation
 from IPython.display import Image as display_image, HTML
+import pyvista as pv
 
 # Let's use an specific style for the plots!
 plt.style.use(['science','notebook','grid'])
@@ -65,8 +67,8 @@ class TwoBodyProblem:
 
 
         # Create plot
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-1.2 * a * np.sqrt(1-e**2), 1.2 * a * np.sqrt(1-e**2))
+        fig, ax = plt.subplots(figsize=(10,10))
+        ax.set_xlim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
         ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
@@ -87,16 +89,16 @@ class Integrators:
     """
     This class contains the integrators for the two-body problem.
     """
-    def __init__(self, N, dt, correction, two_body_instance):
+    def __init__(self, N, correction, two_body_instance):
         """
         
         """
         self.N = N # Number of orbits
-        self.dt = dt
         self.correction = correction
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
         self.t_span = [0, self.N*self.T]
+        self.dt = self.t_span[-1]*1e-4 # Time step
         
 
     @staticmethod
@@ -227,11 +229,10 @@ class Integrators:
 class RunIntegrator:
     """
     """
-    def __init__(self, N, dt, correction, two_body_instance, method, output_dir, save):
+    def __init__(self, N, correction, two_body_instance, method, output_dir, save):
         """
         """
         self.N = N # Number of orbits
-        self.dt = dt
         self.correction = correction
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
@@ -251,31 +252,42 @@ class RunIntegrator:
         
         """
         if self.method == "trapezoidal":
-            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.trapezoidal()
         elif self.method == "RK3":
-            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.RK3()
         else:
-            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.scipy_integator()
 
-        # Unpack the solution
-        x = self.sol[0][:, 0, 0]
-        y = self.sol[0][:, 0, 1]
-        vx = self.sol[0][:, 1, 0]
-        vy = self.sol[0][:, 1, 1]
-        t_eval = self.sol[1]
-        params = np.zeros(t_eval.shape)
-        params[0] = self.a
-        params[1] = self.e
-        params[2] = self.N
-        params[3] = self.R_s
+        # Unpack and round to 5 decimals
+        x = np.around(self.sol[0][:, 0, 0], decimals=5)
+        y = np.around(self.sol[0][:, 0, 1], decimals=5)
+        z = np.zeros_like(x)  # 3D coordinates
+        vx = np.around(self.sol[0][:, 1, 0], decimals=5)
+        vy = np.around(self.sol[0][:, 1, 1], decimals=5)
+        vz = np.zeros_like(vx)
+        t_eval = np.around(self.sol[1], decimals=5)
+
+        points = np.column_stack([x, y, z])
+        orbit = pv.PolyData(points)
         
-        # Create a DataFrame and save it to a CSV file
-        dic = {"t": t_eval, "x": x, "y": y, "vx": vx, "vy": vy, "parameters": params}
-        df = pd.DataFrame(dic)
-        df.to_csv(f"{self.output_dir}/orbit.csv", index=False)
+        # Add velocity vectors
+        orbit['velocity'] = np.column_stack([vx, vy, vz])
+        orbit['time'] = t_eval
+        
+        # Add metadata as field data
+        orbit.field_data['a'] = [np.around(self.a, 5)]
+        orbit.field_data['e'] = [np.around(self.e, 5)]
+        orbit.field_data['n_orbits'] = [self.N]
+        orbit.field_data['schwarzschild_radius'] = [np.around(self.R_s, 5)]
+        orbit.field_data['correction_enabled'] = [1 if self.correction else 0]
+
+        # Save as VTK file
+        vtk_filename = f"{self.output_dir}/orbit.vtk"
+        orbit.save(vtk_filename)
+
         # Save a plot    
         self.plot_orbit(self.sol[0], self.s0, self.a, self.e, self.R_s, self.correction, self.save, self.output_dir)
     
@@ -294,8 +306,8 @@ class RunIntegrator:
 
 
         # Create plot
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-1.2 * a * np.sqrt(1-e**2), 1.2 * a * np.sqrt(1-e**2))
+        fig, ax = plt.subplots(figsize=(10,10))
+        ax.set_xlim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
         ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
@@ -322,25 +334,37 @@ class Animation_TB:
         self.orbit_file_dir = orbit_file_dir
         self.save_dir = save_dir
         self.fps = fps
-        self.data = pd.read_csv(orbit_file_dir)
-        self.t = np.array(self.data["t"])
-        self.dt = self.t[1] - self.t[0]
-        self.x = np.array(self.data["x"])
-        self.y = np.array(self.data["y"])
-        self.vx = np.array(self.data["vx"])
-        self.vy = np.array(self.data["vy"])
-        self.a = self.data["parameters"][0]
-        self.e = self.data["parameters"][1]
-        self.N = self.data["parameters"][2]
-        self.R_s = self.data["parameters"][3]
+        self.orbit = pv.read(orbit_file_dir)
+
+        # Extract positions (x, y, z)
+        points = self.orbit.points  # shape (N, 3)
+        self.x = points[:, 0]       # x positions
+        self.y = points[:, 1]       # y positions
+        z = points[:, 2]       # z positions (zeros as our orbit 2D)
+
+        # Extract velocities (vx, vy, vz)
+        velocity = self.orbit['velocity']  # shape (N, 3)
+        self.vx = velocity[:, 0]          # vx components
+        self.vy = velocity[:, 1]          # vy components
+        vz = velocity[:, 2]          # vz components (zeros as our orbit 2D)
+
+        # Extract time values
+        self.t = self.orbit['time'] 
+
+        # Extract orbital parameters (metadata)
+        self.a = self.orbit.field_data['a'][0]
+        self.e = self.orbit.field_data['e'][0]
+        self.N = self.orbit.field_data['n_orbits'][0]
+        self.R_s = self.orbit.field_data['schwarzschild_radius'][0]
+        self.correction = bool(self.orbit.field_data['correction_enabled'][0])
 
     def animate(self):
         """
         """
         save_dir = self.save_dir
         # Create plot
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-1.2 * self.a * np.sqrt(1-self.e**2), 1.2 * self.a * np.sqrt(1-self.e**2))
+        fig, ax = plt.subplots(figsize=(10,10))
+        ax.set_xlim(-1.4 * self.a * np.sqrt(1-self.e**2), 1.4 * self.a * np.sqrt(1-self.e**2))
         ax.set_ylim(-1.2 * self.a * (1+self.e), 1.2 * self.a * (1-self.e))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
@@ -351,32 +375,84 @@ class Animation_TB:
         ax.add_patch(schwarzschild_circle)
         # Plot initial position of orbiting body
         ax.plot(self.x, self.y, color = "orange", label = "orbit", linestyle='--', alpha=0.5)
-        point, = ax.plot([], [], color = "b", label = "Planet", marker = "o", markersize = 10)
+
+        # Plot current position of orbiting body
+        point, = ax.plot([], [], 'bo', markersize=10, label="Planet", zorder=10)
+        
+    
+        # Calculate velocity scaling factor
+        max_vel = max(np.max(np.abs(self.vx)), np.max(np.abs(self.vy)))
+        arrow_scale = 0.15 * self.a / max_vel  # Arrow length proportional to orbit size
+    
+        # 2. Create quiver with fixed scale and larger arrow props
+        velocity_arrow = ax.quiver([], [], [], [], 
+                                color='dodgerblue', 
+                                scale_units='xy', 
+                                angles='xy', 
+                                scale=1/arrow_scale,
+                                width=0.008,  # Thicker arrows
+                                headwidth=4,  # Larger arrow heads
+                                headlength=5,
+                                headaxislength=4.5,
+                                zorder=9)
+            
+        # Create dynamic legend text
+        legend_text = ax.text(0.02, 0.95, "", transform=ax.transAxes, fontsize=10,
+                            verticalalignment='center', bbox=dict(facecolor='white', alpha=0.8))
+
         ax.legend()
         
-        # Function to animate the point
-        def animate_point(i):
+        # Adaptive downsampling
+        total_frames = len(self.t)
+        target_frames = 100  # Aim for about 100 frames
+        
+        if total_frames <= target_frames:
+            # No downsampling needed if already short
+            step = 1
+            sampled_indices = range(total_frames)
+        else:
+            # Calculate step size to get close to target frames
+            step = max(1, total_frames // target_frames)
+            sampled_indices = range(0, total_frames, step)
+
+        # Function to animate the point and velocity vector
+        def animate_frame(i):
             x_i = self.x[i]
             y_i = self.y[i]
-            point.set_data([x_i], [y_i])  # Pass as sequences (list)
-            return point,
+            vx_i = self.vx[i]
+            vy_i = self.vy[i]
+            
+            # Update planet position
+            point.set_data([x_i], [y_i])
+            
+            ## Update velocity arrow (critical fix - use scaled values)
+            scaled_vx = self.vx[i] * arrow_scale
+            scaled_vy = self.vy[i] * arrow_scale
+            velocity_arrow.set_offsets([[self.x[i], self.y[i]]])
+            velocity_arrow.set_UVC(scaled_vx, scaled_vy)
+            
+            # Update legend text with current values
+            legend_text.set_text(
+                f"Current Position [AU]:\n"
+                f"(x = {x_i:.3f},y = {y_i:.3f})\n"
+                f"Current Velocity [AU/yr]:\n"
+                f"(vx = {vx_i:.3f}, vy = {vy_i:.3f})"
+            )
+            
+            return point, velocity_arrow, legend_text
     
-        # Downsample the data
-        step = len(self.t)//50  # Adjust this value to control the downsampling
-
-        sampled_indices = range(0, len(self.t), step)
-
         # Create the animation
-        movie_wave = animation.FuncAnimation(fig, animate_point, frames=sampled_indices, interval=50, blit=True)
+        anim = animation.FuncAnimation(fig, animate_frame, frames=sampled_indices, interval=50, blit=True, repeat=True)
 
         # Save the animation as GIF
         if save_dir is not None:
-            gif_output = save_dir + "/orbit.gif"
-            movie_wave.save(gif_output, writer="pillow", fps=24)
+            os.makedirs(save_dir, exist_ok=True)
+            gif_output = os.path.join(save_dir, "orbit.gif")
+            anim.save(gif_output, writer="pillow", fps=20, dpi=100)
             
         plt.close()
         
-        return HTML(movie_wave.to_jshtml())
+        return HTML(anim.to_jshtml())
     
 
 # Main function to run the code
@@ -388,7 +464,6 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--a", type=float, default=1, help="Semi-major axis")
     parser.add_argument("-e", "--e", type=float, default=0, help="Eccentricity")
     parser.add_argument("-M", "--M", type=float, default=1, help="Mass of the Black Hole")
-    parser.add_argument("-dt", "--dt", type=float, default=0.01, help="Time step")
     parser.add_argument("-m", "--method", type=str, default="scipy", help="Integration method: trapezoidal, RK3, or scipy")
     parser.add_argument("-c", "--correction", action="store_true", help="Use relativistic correction")
     parser.add_argument("-save_init", "--save_init_plot", action="store_true", help="Save the initial setup plot")
@@ -401,7 +476,6 @@ if __name__ == "__main__":
     a = args.a
     e = args.e
     M = args.M
-    dt = args.dt
     method = args.method
     correction = args.correction
     save_init = args.save_init_plot
@@ -413,12 +487,12 @@ if __name__ == "__main__":
     # Plot the grid
     two_body_instance.plot_grid(save_init, output_dir)
     # Run the integrator
-    run_integrator = RunIntegrator(N, dt, correction, two_body_instance, method, output_dir, save)
+    run_integrator = RunIntegrator(N, correction, two_body_instance, method, output_dir, save)
     sol = run_integrator.run()
     
     # Create the animation
     if animate:
-        orbit_file_dir = f"{output_dir}/orbit.csv"
+        orbit_file_dir = f"{output_dir}/orbit.vtk"
         animation_instance = Animation_TB(orbit_file_dir, output_dir)
         animation_instance.animate()
     
