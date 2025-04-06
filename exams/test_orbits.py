@@ -22,7 +22,7 @@ class TestOrbitSimulation:
             "N": 1,
             "method": "RK3",
             "correction": False,
-            "save": False,
+            "names": "test",
         }
         print("\n=== Test Suite Starting ===")
 

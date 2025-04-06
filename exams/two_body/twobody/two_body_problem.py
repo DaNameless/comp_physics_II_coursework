@@ -1,21 +1,18 @@
-#Importing necessary libraries for calculations, plotting and writing files
 import os
-import numpy as np 
-import matplotlib.pyplot as plt
-import scienceplots # Just for aesthetic purposes
-import pandas as pd
-import numpy.linalg as la
-import sympy as sp
-from scipy.integrate import solve_ivp, simpson
-from scipy.optimize import fsolve
-from matplotlib import animation
-from IPython.display import Image as display_image, HTML
-import pyvista as pv
-
 # Modules for parsing the config file and command line arguments
 import argparse
 import configparser
 from pathlib import Path
+
+#Importing necessary libraries for calculations, plotting and writing files
+import numpy as np 
+import matplotlib.pyplot as plt
+from matplotlib import animation
+import scienceplots # Just for aesthetic purposes
+from scipy.integrate import solve_ivp
+import pyvista as pv
+
+
 
 
 # Let's use an specific style for the plots!
@@ -40,30 +37,57 @@ G = 4*(np.pi**2) # [AU^3/M_sun year^2]
 
 class TwoBodyProblem:
     """
-    Class to solve the two body problem.
+    Class to initialize the two body problem system.
+    The system is defined by the mass of the central body, the semi-major axis and the eccentricity.
+    The system is defined in a 2D plane, so the initial conditions are defined in the x-y plane.
+    It requires numpy and matplotlib to plot the initial conditions.
+    
+    Author: R.S.S.G.
+    Date created: 05/04/2025
     """
     def __init__(self, M, a, e):
         """
         Initialize the two body problem.
-
-        Parameters
-        ----------
-        M, a, e
-        """
-        self.M = M
-        self.a = a
-        self.e = e
-        
+        Input:
+            M (float) -> Mass of the central body, in our case a black hole, in units of Solar masses.
+            a (float)-> Semi-major axis of the orbit, in units of AU. 0<a
+            e (float)-> Eccentricity of the orbit. 0<=e<1
+          
+        Author: R.S.S.G.
+        Date created: 05/04/2025
+        """        
         # Let's define some fixed variables
+        if e >= 1 or e < 0:
+            raise ValueError("Eccentricity must be less than 1")
+        else:
+            self.e = e
+            
+        if M <= 1e-9:
+            raise ValueError("Mass must be greater than 0")
+        else:
+            self.M = M  
+
+        if a <= 1e-9:
+            raise ValueError("Semi-major axis must be greater than 0")
+        else:   
+            self.a = a
+
         self.T = 2*np.pi*np.sqrt((a**3)/(G*self.M)) #[years]
         self.R_s = (2*G*self.M)/(C**2)
         self.r0 = np.array([0, a*(1-e)])
         self.v0 = np.array([-np.sqrt((G*self.M/a)*((1+e)/(1-e))),0])
         self.s0 = np.array([self.r0, self.v0])
-    
-    def plot_grid(self, save=False, output_dir="."):
-        """
         
+    def plot_grid(self, init_plot_name, output_dir):
+        """
+        This function plots the initial conditions of the two body problem.
+        It plots the black hole, the planet and the Schwarzschild radius.
+        Input: 
+            self
+            init_plot_name (str) -> If given, saves the plot in the output directory with that name. Otherwise, it won't be saved.
+            output_dir (str) -> Output directory to save the plot.
+        Output:
+            orbit_ini.png (png file) -> Plot of the initial setup for the two body problem.
         """
         a = self.a
         e = self.e
@@ -85,33 +109,55 @@ class TwoBodyProblem:
         # Plot initial position of orbiting body
         ax.scatter(r0[0], r0[1], color='b', s=25, label="Planet")
         ax.legend()
-        if save:
-            plt.savefig(f"{output_dir}/orbit_ini.png")
+        if init_plot_name is not None:
+            plt.savefig(f"{output_dir}/{init_plot_name}.png")
+        
+        plt.close()
 
 
 
 class Integrators:
     """
-    This class contains the integrators for the two-body problem.
+    This class implements the integrators for the two body problem.
+    It implements the trapezoidal method, the RK3 method and the scipy integrator.
+    It also implements the slope function for the two body problem with or without relativistic corrections, depending on user's input.
+    It requires numpy and scipy to integrate the equations of motion.
+
+    Author: R.S.S.G.
+    Date created: 05/04/2025
     """
-    def __init__(self, N, correction, two_body_instance):
+    def __init__(self, N, correction, dt, two_body_instance):
         """
-        
+        Initialize the integrator.
+        Input:
+            N (int) -> Number of orbits to integrate.
+            correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+            dt (float) -> Time step size. If None, it will be calculated automatically by the integrators class (1e-4 times the Total Time).
+            two_body_instance (TwoBodyProblem) -> Instance of the TwoBodyProblem class.
+        Author: R.S.S.G.
+        Date created: 05/04/2025    
         """
         self.N = N # Number of orbits
         self.correction = correction
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
         self.t_span = [0, self.N*self.T]
-        self.dt = self.t_span[-1]*1e-4 # Time step
-        
+        if dt is None:
+            self.dt = self.t_span[-1]*1e-4 # Time step
+        else:
+            self.dt = dt
 
     @staticmethod
     def slope(t, s, correction, M):
         """
-        u is actual state
-        u[0] is r
-        u[1] is v
+        This function defines the slope of the two body problem ODE.
+        Input:
+            t (float) -> Time value, however it is not used in the equations of motion.
+            s (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+            M (float) -> Mass of the central body, in our case a black hole, in units of Solar masses.
+        Author: R.S.S.G.
+        Date created: 05/04/2025  
         """
 
         r = np.linalg.norm(s[0])
@@ -128,7 +174,16 @@ class Integrators:
     @staticmethod
     def slope_scipy(t, s0_flat, correction, M):
         """
-        
+        This function defines the slope of the two body problem ODE. This version is used for the scipy integrator.
+        It flattens the state vector to be compatible with scipy's solve_ivp.
+        It also uses the same equations as the alternative slope function, but it is more efficient for scipy's integrator.
+        Input:
+            t (float) -> Time value, however it is not used in the equations of motion.
+            s (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+            M (float) -> Mass of the central body, in our case a black hole, in units of Solar masses.
+        Author: R.S.S.G.
+        Date created: 05/04/2025  
         """
         r = s0_flat[:2]  # position components [x, y]
         v = s0_flat[2:]  # velocity components [vx, vy]
@@ -146,7 +201,17 @@ class Integrators:
 
     def trapezoidal(self):
         """
-        
+        This function implements the trapezoidal method for the two body problem.
+        It uses the `slope` static method defined to compute the derivatives.
+        It stops when the solution diverges, using the difference with the consecutive to be less than 1e-5.
+        Input:
+            self
+        Output:
+            s (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            t (np.array of float) -> Time vector axis.
+
+        Author: R.S.S.G.
+        Date created: 05/04/2025  
         """
         f = self.slope
         t_span = self.t_span
@@ -196,7 +261,17 @@ class Integrators:
     
     def RK3(self):
         """
+        This function implements the RK3 method for the two body problem.
+        It uses the `slope` static method defined to compute the derivatives.
+        It stops when the solution diverges, using the difference with the consecutive to be less than 1e-5.
+        Input:
+            self
+        Output:
+            s (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            t (np.array of float) -> Time vector axis.
         
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
         """
         f = self.slope
         t_span = self.t_span
@@ -244,7 +319,16 @@ class Integrators:
     
     def scipy_integator(self):
         """
-    
+        This function implements the scipy solve_ivp integrator for the two body problem.
+        It uses the `slope_scipy` static method defined to compute the derivatives.
+        It stops when the solution diverges, but this is handled by the scipy integrator.
+        Input:
+            self
+        Output:
+            s (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            sol.t (np.array of float) -> Time vector axis.
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
         """
         # Fixed method
         method='DOP853'
@@ -273,12 +357,33 @@ class Integrators:
 
 class RunIntegrator:
     """
+    This class runs the integrator for the two body problem by using the `Integrators` class to run the integrator.
+    It also implements a plot function to plot the complete planet's orbit.
+    It requires numpy, matplotlib and pyvista to write and read VTK files.
+    Author: R.S.S.G.
+    Date created: 05/04/2025 
     """
-    def __init__(self, N, correction, two_body_instance, method, output_dir, save):
+    def __init__(self, N, correction, dt, two_body_instance, method, output_dir, vtk_name, orbit_plot_name):
         """
+        Initialize the integrator. Automatically sets the time span and the initial conditions.
+        It also sets the output directory and the save option.
+        It uses the `Integrators` class to run the integrator.
+        Input:
+            N (int) -> Number of orbits to integrate.
+            correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+            dt (float) -> Time step size. If None, it will be calculated automatically by the integrators class (1e-4 times the Total Time).
+            two_body_instance (TwoBodyProblem) -> Instance of the TwoBodyProblem class.
+            method (str) -> Integration method to use. Options are "trapezoidal", "RK3" or "scipy". 
+            output_dir (str) -> Output directory to save the plot.
+            vtk_name (str) -> Saving name of the vtk file containing the orbit
+            orbit_plot_name (str) -> If given, saves the plot in the output directory. Otherwise it won't be saved.
+
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
         """
         self.N = N # Number of orbits
         self.correction = correction
+        self.dt = dt
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
         self.s0 = self.two_body_instance.s0
@@ -286,25 +391,41 @@ class RunIntegrator:
         self.R_s = self.two_body_instance.R_s
         self.e = self.two_body_instance.e
         self.t_span = [0, self.N*self.T]
-        self.method = method
+        if method not in ["trapezoidal", "RK3", "scipy"]:
+            raise ValueError("Invalid integration method")
+        else: 
+            self.method = method
+
         self.output_dir = output_dir
-        self.save = save
+        self.vtk_name = vtk_name
+        self.orbit_plot_name = orbit_plot_name
 
         self.sol = None
 
     def run(self):
         """
-        
+        This function runs the integrator for the two body problem and plots the orbit using the static method `plot_orbit`.
+        It uses the `Integrators` class to run the integrator.
+        It saves the orbit as a VTK file using `pyvista`.
+
+        Input:
+            self
+        Output:
+            sol (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            orbit.vtk (vtk file) -> VTK file with the orbit data.
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
         """
+        integrator = Integrators(N = self.N, correction = self.correction, dt = self.dt, two_body_instance = self.two_body_instance)
+        
         if self.method == "trapezoidal":
-            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.trapezoidal()
         elif self.method == "RK3":
-            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.RK3()
-        else:
-            integrator = Integrators(self.N, self.correction, self.two_body_instance)
+        elif self.method == "scipy":
             self.sol = integrator.scipy_integator()
+        else:
+            raise ValueError("Invalid integration method")
 
         # Unpack and round to 5 decimals
         x = np.around(self.sol[0][:, 0, 0], decimals=5)
@@ -330,17 +451,35 @@ class RunIntegrator:
         orbit.field_data['correction_enabled'] = [1 if self.correction else 0]
 
         # Save as VTK file
-        vtk_filename = f"{self.output_dir}/orbit.vtk"
+        vtk_filename = f"{self.output_dir}/{self.vtk_name}.vtk"
         orbit.save(vtk_filename)
 
         # Save a plot    
-        self.plot_orbit(self.sol[0], self.s0, self.a, self.e, self.R_s, self.correction, self.save, self.output_dir)
+        self.plot_orbit(self.sol[0], self.s0, self.a, self.e, self.R_s, self.correction, self.orbit_plot_name, self.output_dir)
     
         return self.sol
     
     @staticmethod
-    def plot_orbit(sol, s0, a, e, R_s, correction, save, output_dir):
+    def plot_orbit(sol, s0, a, e, R_s, correction, orbit_plot_name, output_dir):
         """
+        This function plots the orbit of the two body problem.
+        It uses the `matplotlib` library to plot the orbit.
+
+        Input:
+            sol (np.array of float-containing np.arrays) -> State vector (or matrix) [position=[x,y], velocity = [vx,vy]].
+            s0 (np.array of float-containing np.arrays) -> Initial conditions [position=[x,y], velocity = [vx,vy]].
+            a (float) -> Semi-major axis of the orbit, in units of AU.
+            e (float) -> Eccentricity of the orbit. 0<=e<1
+            R_s (float) -> Schwarzschild radius of the black hole, in units of AU.
+            correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+            orbit_plot_name (str) -> If given, saves the plot in the output directory. Otherwise it won't be saved.
+            output_dir (str) -> Output directory to save the plot.
+        Output:
+            orbit.png (png file) -> Plot of the planet's orbit.
+
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
+
         """
         # Unpack initial conditions
         r0 = s0[0]
@@ -369,23 +508,43 @@ class RunIntegrator:
         ax.scatter(r0[0], r0[1], color='b', s=50, label="Planet")
         ax.plot(x, y, color = "orange", label = "orbit")
         ax.legend()
-        if save:
+        if orbit_plot_name is not None:
             orbit_type = "relativistic" if correction else "classical"
-            plt.savefig(f"{output_dir}/{orbit_type}_orbit.png")
+            plt.savefig(f"{output_dir}/{orbit_type}_{orbit_plot_name}.png")
 
         plt.close()
         return fig
     
-class Animation_TB:
+class Animation:
     """ 
+    Class to animate the two body problem orbit.
+    It uses the `matplotlib` library to create the animation. It requires the `pyvista` library to read the VTK file and extract the orbit data.
+    It also uses the `numpy` library to manipulate the data.
+    It uses the `matplotlib.animation` library to create the animation.
+    It requires the `os` library to create the output directory if it does not exist.
+
+    Author: R.S.S.G.
+    Date created: 05/04/2025 
     """
-    def __init__(self, orbit_file_dir, save_dir=None, fps=30):
+    def __init__(self, orbit_file, output_dir, animation_name, fps=30):
         """
+        Initialize the animation class. It reads the VTK file and extracts the orbit data.
+        It also sets the output directory and the frames per second for the animation.
+        It uses the `pyvista` library to read the VTK file and extract the orbit data.
+        Input:
+            orbit_file (str) -> Path including filename to the VTK file with the orbit data.
+            output_dir (str) -> Output directory to save the animation. If None, it will not save the animation.
+            animation_name (str) -> Name of the animation file. If None, it will not save the animation.
+            fps (int) -> Frames per second for the animation. Default is 30.
+        
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
         """
-        self.orbit_file_dir = orbit_file_dir
-        self.save_dir = save_dir
+        self.orbit_file_dir = orbit_file
+        self.output_dir = output_dir
+        self.animation_name = animation_name
         self.fps = fps
-        self.orbit = pv.read(orbit_file_dir)
+        self.orbit = pv.read(orbit_file)
 
         # Extract positions (x, y, z)
         points = self.orbit.points  # shape (N, 3)
@@ -410,11 +569,25 @@ class Animation_TB:
         self.correction = bool(self.orbit.field_data['correction_enabled'][0])
 
     def animate(self):
-        save_dir = self.save_dir
+        """
+        This function creates the animation of the two body problem orbit. It implements the orbit as a gif file, with velocity vector pointing in the direction of the movement.
+        It uses the `matplotlib.animation` library to create the animation.
+        It requires the `os` library to create the output directory if it does not exist.
+        Input:
+            self
+        Output:
+            anim (matplotlib.animation.FuncAnimation) -> Animation object.
+            orbit.gif (gif file) -> Animation of the two body problem orbit.
+        Author: R.S.S.G.
+        Date created: 05/04/2025 
+
+        """
+        output_dir = self.output_dir
+        animation_name = self.animation_name
 
         # Create plot
         fig, ax = plt.subplots(figsize=(10,10))
-        ax.set_xlim(-1.6 * self.a * np.sqrt(1 - self.e**2), 1.6 * self.a * np.sqrt(1 - self.e**2))
+        ax.set_xlim(-1.7 * self.a * np.sqrt(1 - self.e**2), 1.7 * self.a * np.sqrt(1 - self.e**2))
         
         # To avoid the orbit to be cut in half, we need to set the limits
         # to the maximum and minimum values of the orbit
@@ -503,10 +676,10 @@ class Animation_TB:
         # Animate
         anim = animation.FuncAnimation(fig, animate_frame, frames=sampled_indices, interval=50, blit=True, repeat=True)
 
-        if save_dir is not None:
-            os.makedirs(save_dir, exist_ok=True)
-            gif_output = os.path.join(save_dir, "orbit.gif")
-            anim.save(gif_output, writer="pillow", fps=20, dpi=100)
+        if output_dir is not None and animation_name is not None:
+            os.makedirs(output_dir, exist_ok=True)
+            gif_output = os.path.join(output_dir, f"{animation_name}.gif")
+            anim.save(gif_output, writer="pillow", fps=self.fps, dpi=100)
 
         plt.close()
 
@@ -515,6 +688,15 @@ class Animation_TB:
 
 
 def parse_config_file(config_path):
+    """
+    Parse the configuration file (.ini) and return the default values.
+    Input:
+        config_path (str) -> Path to the configuration file (.ini).
+    Output:
+        defaults (dict) -> Dictionary with the default values.
+    Author: R.S.S.G.
+    Date created: 05/04/2025 
+    """
     config = configparser.ConfigParser()
     config.read(config_path)
     
@@ -525,14 +707,45 @@ def parse_config_file(config_path):
         'M': config.getfloat('two_body', 'M', fallback=1.0),
         'method': config.get('two_body', 'method', fallback='scipy'),
         'correction': config.getboolean('two_body', 'correction', fallback=False),
-        'save_init_plot': config.getboolean('two_body', 'save_init_plot', fallback=False),
-        'save_plot': config.getboolean('two_body', 'save_plot', fallback=False),
+        'dt': config.getfloat('two_body', 'dt', fallback=None),
+        'init_plot_name': config.get('two_body', 'init_plot_name', fallback=None),
+        'orbit_plot_name': config.get('two_body', 'orbit_plot_name', fallback=None),
+        'orbit_vtk_name': config.get('two_body', 'orbit_vtk_name', fallback="orbit"),
+        'animation_name': config.get('two_body', 'animation_name', fallback=None),
+        'vtk_orbit': config.get('two_body', 'vtk_orbit', fallback=None),
         'output_dir': config.get('two_body', 'output_dir', fallback='.'),
-        'animate': config.getboolean('two_body', 'animate', fallback=False),
     }
     return defaults
 
-if __name__ == "__main__":
+
+def main():
+    """
+    Main function to run the two body problem solver.
+    It parses the command line arguments and the configuration file.
+    It creates the output directory if it does not exist.
+    It runs the integrator and saves the desired results.
+    It creates the animation if requested.
+    Input for parser:
+        -c, --config (str) -> Path to the configuration file (.ini).
+        -N, --N (int) -> Number of orbits to integrate.
+        -a, --a (float) -> Semi-major axis of the orbit, in units of AU.    
+        -e, --e (float) -> Eccentricity of the orbit. 0<=e<1
+        -M, --M (float) -> Mass of the central body, in units of Solar masses.
+        -m, --method (str) -> Integration method to use. Options are "trapezoidal", "RK3" or "scipy (DOP853)".
+        -dt, --dt (float) -> Time step size. If None, it will be calculated automatically by the integrators class (1e-4 times the Total Time).
+        -corr, --correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+        -init_n, --init_plot_name (str) -> If given, saves the initial setup plot with that name. Otherwise it won't be saved.
+        -plot_n, --orbit_plot_name (str) -> If given, saves the orbit plot with that name. Otherwise it won't be saved.
+        -orbit_n, --orbit_vtk_name (str) -> If give, vtk orbit will be saved with that name. Otherwise, it will be saved as "orbit.vtk" by default.
+        -anim_name, --animation_name (str) -> If given, creates the animation. Otherwise it won't be created.
+        -vtk_orbit, --vtk_orbit (str) -> Path including name to the VTK file with the orbit data for the animation. If not given, the animation won't be created.
+        -dir, --output_dir (str) -> Output directory to save the desired plots, vtk file orbit and animation. 
+    Output:
+        Requested plots and VTK files with the orbit data.
+    
+    Author: R.S.S.G.
+    Date created: 05/04/2025 
+    """
     # Parse config file if it exists
     config_path = Path('config.ini')
     defaults = parse_config_file(config_path) if config_path.exists() else {}
@@ -544,17 +757,23 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--a", type=float, default=defaults.get('a', 1), help="Semi-major axis")
     parser.add_argument("-e", "--e", type=float, default=defaults.get('e', 0), help="Eccentricity")
     parser.add_argument("-M", "--M", type=float, default=defaults.get('M', 1), help="Mass of the Black Hole")
+    parser.add_argument("-dt", "--dt", type=float, default=defaults.get('dt', None), help="Time step size")
     parser.add_argument("-m", "--method", type=str, default=defaults.get('method', 'scipy'), help="Integration method")
     parser.add_argument("-corr", "--correction", action='store_true', default=defaults.get('correction', False), 
                        help="Use relativistic correction")
-    parser.add_argument("-save_init", "--save_init_plot", action='store_true', 
-                       default=defaults.get('save_init_plot', False), help="Save the initial setup plot")
-    parser.add_argument("-save_plot", "--save_plot", action='store_true', 
-                       default=defaults.get('save_plot', False), help="Save the orbit plot")
+    parser.add_argument("-init_n", "--init_plot_name", type=str, 
+                       default=defaults.get('init_plot_name', None), help="Saving name of the initial setup plot")
+    parser.add_argument("-plot_n", "--orbit_plot_name", type=str,
+                       default=defaults.get('orbit_plot_name', None), help="Saving name of the orbit plot") 
+    parser.add_argument("-orbit_n", "--orbit_vtk_name", type=str,
+                       default=defaults.get('orbit_vtk_name', "orbit"), help="Saving name of the orbit vtk file") 
+    parser.add_argument("-anim_n", "--animation_name", type=str, default=defaults.get('animation_name', None), 
+                       help="Saving name of the orbit's animation")
+    parser.add_argument("-vtk_orbit", "--vtk_orbit", type=str, default=defaults.get('vtk_orbit', None),
+                       help="Path including name to the VTK file with the orbit data")
     parser.add_argument("-dir", "--output_dir", type=str, default=defaults.get('output_dir', '.'), 
-                       help="Output directory for results")
-    parser.add_argument("-anim", "--animate", action='store_true', default=defaults.get('animate', False), 
-                       help="Create animation")
+                       help="Output directory for desired results")
+    
     
     args = parser.parse_args()
     
@@ -572,17 +791,31 @@ if __name__ == "__main__":
     M = args.M
     method = args.method
     correction = args.correction
-    save_init = args.save_init_plot
-    save = args.save_plot
+    dt = args.dt
+    init_plot_name = args.init_plot_name
+    orbit_plot_name = args.orbit_plot_name
+    orbit_vtk_name = args.orbit_vtk_name
+    animation_name = args.animation_name
+    vtk_orbit = args.vtk_orbit
     output_dir = args.output_dir
-    animate = args.animate
     
     two_body_instance = TwoBodyProblem(M, a, e)
-    two_body_instance.plot_grid(save_init, output_dir)
-    run_integrator = RunIntegrator(N, correction, two_body_instance, method, output_dir, save)
+    two_body_instance.plot_grid(init_plot_name, output_dir)
+    run_integrator = RunIntegrator(N, correction, dt, two_body_instance, method, output_dir, orbit_vtk_name, orbit_plot_name)
     sol = run_integrator.run()
-    
-    if animate:
-        orbit_file_dir = f"{output_dir}/orbit.vtk"
-        animation_instance = Animation_TB(orbit_file_dir, output_dir)
+
+    if animation_name is not None and vtk_orbit is not None:
+        # Create the animation
+        orbit_file = f"{vtk_orbit}"
+        animation_instance = Animation(orbit_file, output_dir, animation_name)
         animation_instance.animate()
+    elif animation_name is not None and vtk_orbit is None:
+        raise ValueError("If you want to create an animation, you need to provide the VTK file with the orbit data.")
+    elif animation_name is None and vtk_orbit is not None:
+        raise ValueError("If you want to create the VTK file, you need to provide the animation name.")
+   
+
+
+if __name__ == "__main__":
+    # Run the main function
+    main()
