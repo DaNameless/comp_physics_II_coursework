@@ -1,4 +1,5 @@
-#Importing necessary libraries
+#Importing necessary libraries for calculations, plotting and writing files
+import os
 import numpy as np 
 import matplotlib.pyplot as plt
 import scienceplots # Just for aesthetic purposes
@@ -7,9 +8,15 @@ import numpy.linalg as la
 import sympy as sp
 from scipy.integrate import solve_ivp, simpson
 from scipy.optimize import fsolve
-import argparse
 from matplotlib import animation
 from IPython.display import Image as display_image, HTML
+import pyvista as pv
+
+# Modules for parsing the config file and command line arguments
+import argparse
+import configparser
+from pathlib import Path
+
 
 # Let's use an specific style for the plots!
 plt.style.use(['science','notebook','grid'])
@@ -65,9 +72,9 @@ class TwoBodyProblem:
 
 
         # Create plot
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-1.2 * a * np.sqrt(1-e**2), 1.2 * a * np.sqrt(1-e**2))
-        ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
+        fig, ax = plt.subplots(figsize=(10,10))
+        ax.set_xlim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
+        ax.set_ylim(-1.4 * a * np.sqrt(1-e**2), 1.4 * a * np.sqrt(1-e**2))
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Initial Two-Body Problem Setup")
@@ -87,16 +94,16 @@ class Integrators:
     """
     This class contains the integrators for the two-body problem.
     """
-    def __init__(self, N, dt, correction, two_body_instance):
+    def __init__(self, N, correction, two_body_instance):
         """
         
         """
         self.N = N # Number of orbits
-        self.dt = dt
         self.correction = correction
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
         self.t_span = [0, self.N*self.T]
+        self.dt = self.t_span[-1]*1e-4 # Time step
         
 
     @staticmethod
@@ -139,32 +146,53 @@ class Integrators:
 
     def trapezoidal(self):
         """
-
+        
         """
-        f=self.slope
+        f = self.slope
         t_span = self.t_span
         dt = self.dt
         
         s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
 
-        # Initialize time array
-        t_axis = np.arange(t_span[0], t_span[1] + dt, dt)
-        n = len(t_axis)
+        # Initialize lists to store results dynamically
+        s_list = [s0.copy()]
+        t_list = [t_span[0]]
 
-        # Initialize solution array and set initial condition
-        s = np.zeros((n, len(s0), len(s0[0])))
-        s[0] = s0
-        
-        for j in range(n - 1):
-            t = t_axis[j]
+        # Maximum allowed value before we consider it diverged
+        MAX_VALUE = 1e5
 
-            s_next = s[j] + dt * f(t, s[j], self.correction, M)
-            s_next = s[j] + (dt/2) * (f(t, s[j], self.correction, M) + f(t + dt, s_next, self.correction, M))
+        for j in range(1, int((t_span[1] - t_span[0]) / dt) + 1):
+            t_prev = t_list[-1]
+            s_prev = s_list[-1]
             
-            s[j+1] = s_next
-            
-        return s, t_axis
+            try:
+                # Predictor step
+                s_predict = s_prev + dt * f(t_prev, s_prev, self.correction, M)
+                
+                # Corrector step (trapezoidal rule)
+                s_next = s_prev + (dt/2) * (
+                    f(t_prev, s_prev, self.correction, M) + 
+                    f(t_prev + dt, s_predict, self.correction, M)
+                )
+                
+                # Check for divergence
+                if (np.any(np.isnan(s_next)) or (np.any(np.abs(s_next-s_predict) > MAX_VALUE))):
+                    break
+                    
+                # Store results
+                s_list.append(s_next)
+                t_list.append(t_prev + dt)
+                
+            except (FloatingPointError, ValueError):
+                # Handle numerical errors (overflow, etc.)
+                break
+
+        # Convert lists to numpy arrays
+        s = np.array(s_list)
+        t_array = np.array(t_list)
+
+        return s, t_array
     
     def RK3(self):
         """
@@ -176,24 +204,43 @@ class Integrators:
 
         s0 = self.two_body_instance.s0
         M = self.two_body_instance.M
-        
-        t_axis = np.arange(t_span[0], t_span[1] + dt, dt)
-        n = len(t_axis)
-        
-        s = np.zeros((n, len(s0), len(s0[0])))
-        s[0] = s0
-        
-        for j in range(n - 1):
-            t = t_axis[j]
-                        # RK4 stages
-            k1 = f(t, s[j], self.correction, M)
-            k2 = f(t + dt/2, s[j] + (dt/2)*k1, self.correction, M)
-            k3 = f(t + dt, s[j]-dt*k1 + 2*dt*k2, self.correction, M)
-        
-            # Combine slopes
-            s[j+1] = s[j] + (dt / 6) * (k1 + 4*k2 + k3)
 
-        return s, t_axis
+        # Initialize lists to store results dynamically
+        s_list = [s0.copy()]
+        t_list = [t_span[0]]
+
+        # Maximum allowed value before we consider it diverged
+        MAX_VALUE = 1e5 
+
+        for j in range(1, int((t_span[1] - t_span[0]) / dt) + 1):
+            t_prev = t_list[-1]
+            s_prev = s_list[-1]
+            
+            # RK4 stages
+            try:
+                k1 = f(t_prev, s_prev, self.correction, M)
+                k2 = f(t_prev + dt/2, s_prev + (dt/2)*k1, self.correction, M)
+                k3 = f(t_prev + dt, s_prev - dt*k1 + 2*dt*k2, self.correction, M)
+                
+                # Compute next step
+                s_next = s_prev + (dt / 6) * (k1 + 4*k2 + k3)
+                
+                # Check for divergence
+                if (np.any(np.isnan(s_next)) or (np.any(np.abs(s_next-s_prev) > MAX_VALUE))):
+                    break
+                    
+                # Store results
+                s_list.append(s_next)
+                t_list.append(t_prev + dt)
+            except (FloatingPointError, ValueError):
+                # Handle numerical errors (overflow, etc.)
+                break
+
+        # Convert lists to numpy arrays
+        s = np.array(s_list)
+        t_array = np.array(t_list)
+
+        return s, t_array
     
     def scipy_integator(self):
         """
@@ -227,11 +274,10 @@ class Integrators:
 class RunIntegrator:
     """
     """
-    def __init__(self, N, dt, correction, two_body_instance, method, output_dir, save):
+    def __init__(self, N, correction, two_body_instance, method, output_dir, save):
         """
         """
         self.N = N # Number of orbits
-        self.dt = dt
         self.correction = correction
         self.two_body_instance = two_body_instance
         self.T = self.two_body_instance.T
@@ -251,31 +297,42 @@ class RunIntegrator:
         
         """
         if self.method == "trapezoidal":
-            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.trapezoidal()
         elif self.method == "RK3":
-            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.RK3()
         else:
-            integrator = Integrators(self.N, self.dt, self.correction, self.two_body_instance)
+            integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.scipy_integator()
 
-        # Unpack the solution
-        x = self.sol[0][:, 0, 0]
-        y = self.sol[0][:, 0, 1]
-        vx = self.sol[0][:, 1, 0]
-        vy = self.sol[0][:, 1, 1]
-        t_eval = self.sol[1]
-        params = np.zeros(t_eval.shape)
-        params[0] = self.a
-        params[1] = self.e
-        params[2] = self.N
-        params[3] = self.R_s
+        # Unpack and round to 5 decimals
+        x = np.around(self.sol[0][:, 0, 0], decimals=5)
+        y = np.around(self.sol[0][:, 0, 1], decimals=5)
+        z = np.zeros_like(x)  # 3D coordinates
+        vx = np.around(self.sol[0][:, 1, 0], decimals=5)
+        vy = np.around(self.sol[0][:, 1, 1], decimals=5)
+        vz = np.zeros_like(vx)
+        t_eval = np.around(self.sol[1], decimals=5)
+
+        points = np.column_stack([x, y, z])
+        orbit = pv.PolyData(points)
         
-        # Create a DataFrame and save it to a CSV file
-        dic = {"t": t_eval, "x": x, "y": y, "vx": vx, "vy": vy, "parameters": params}
-        df = pd.DataFrame(dic)
-        df.to_csv(f"{self.output_dir}/orbit.csv", index=False)
+        # Add velocity vectors
+        orbit['velocity'] = np.column_stack([vx, vy, vz])
+        orbit['time'] = t_eval
+        
+        # Add metadata as field data
+        orbit.field_data['a'] = [np.around(self.a, 5)]
+        orbit.field_data['e'] = [np.around(self.e, 5)]
+        orbit.field_data['n_orbits'] = [self.N]
+        orbit.field_data['schwarzschild_radius'] = [np.around(self.R_s, 5)]
+        orbit.field_data['correction_enabled'] = [1 if self.correction else 0]
+
+        # Save as VTK file
+        vtk_filename = f"{self.output_dir}/orbit.vtk"
+        orbit.save(vtk_filename)
+
         # Save a plot    
         self.plot_orbit(self.sol[0], self.s0, self.a, self.e, self.R_s, self.correction, self.save, self.output_dir)
     
@@ -294,9 +351,13 @@ class RunIntegrator:
 
 
         # Create plot
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-1.2 * a * np.sqrt(1-e**2), 1.2 * a * np.sqrt(1-e**2))
-        ax.set_ylim(-1.2 * a * (1+e), 1.2 * a * (1-e))
+        fig, ax = plt.subplots(figsize=(10,10))
+        ax.set_xlim(-1.6 * a * np.sqrt(1 - e**2), 1.6 * a * np.sqrt(1 - e**2))
+        
+        # To avoid the orbit to be cut in half, we need to set the limits
+        # to the maximum and minimum values of the orbit
+        #ax.set_ylim(-1.2 * self.a * (1 + self.e), 1.2 * self.a * (1 - self.e))   # This would work if the orbit is classical
+        ax.set_ylim(1.2 * min(y) , 1.4 * a * (1 - e)) # This will work for both classical and relativistic orbits
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
@@ -311,6 +372,8 @@ class RunIntegrator:
         if save:
             orbit_type = "relativistic" if correction else "classical"
             plt.savefig(f"{output_dir}/{orbit_type}_orbit.png")
+
+        plt.close()
         return fig
     
 class Animation_TB:
@@ -322,103 +385,204 @@ class Animation_TB:
         self.orbit_file_dir = orbit_file_dir
         self.save_dir = save_dir
         self.fps = fps
-        self.data = pd.read_csv(orbit_file_dir)
-        self.t = np.array(self.data["t"])
-        self.dt = self.t[1] - self.t[0]
-        self.x = np.array(self.data["x"])
-        self.y = np.array(self.data["y"])
-        self.vx = np.array(self.data["vx"])
-        self.vy = np.array(self.data["vy"])
-        self.a = self.data["parameters"][0]
-        self.e = self.data["parameters"][1]
-        self.N = self.data["parameters"][2]
-        self.R_s = self.data["parameters"][3]
+        self.orbit = pv.read(orbit_file_dir)
+
+        # Extract positions (x, y, z)
+        points = self.orbit.points  # shape (N, 3)
+        self.x = points[:, 0]       # x positions
+        self.y = points[:, 1]       # y positions
+        z = points[:, 2]       # z positions (zeros as our orbit 2D)
+
+        # Extract velocities (vx, vy, vz)
+        velocity = self.orbit['velocity']  # shape (N, 3)
+        self.vx = velocity[:, 0]          # vx components
+        self.vy = velocity[:, 1]          # vy components
+        vz = velocity[:, 2]          # vz components (zeros as our orbit 2D)
+
+        # Extract time values
+        self.t = self.orbit['time'] 
+
+        # Extract orbital parameters (metadata)
+        self.a = self.orbit.field_data['a'][0]
+        self.e = self.orbit.field_data['e'][0]
+        self.N = self.orbit.field_data['n_orbits'][0]
+        self.R_s = self.orbit.field_data['schwarzschild_radius'][0]
+        self.correction = bool(self.orbit.field_data['correction_enabled'][0])
 
     def animate(self):
-        """
-        """
         save_dir = self.save_dir
+
         # Create plot
-        fig, ax = plt.subplots(figsize=(8,8))
-        ax.set_xlim(-1.2 * self.a * np.sqrt(1-self.e**2), 1.2 * self.a * np.sqrt(1-self.e**2))
-        ax.set_ylim(-1.2 * self.a * (1+self.e), 1.2 * self.a * (1-self.e))
+        fig, ax = plt.subplots(figsize=(10,10))
+        ax.set_xlim(-1.6 * self.a * np.sqrt(1 - self.e**2), 1.6 * self.a * np.sqrt(1 - self.e**2))
+        
+        # To avoid the orbit to be cut in half, we need to set the limits
+        # to the maximum and minimum values of the orbit
+        #ax.set_ylim(-1.2 * self.a * (1 + self.e), 1.2 * self.a * (1 - self.e))   # This would work if the orbit is classical
+        ax.set_ylim(1.2 * min(self.y) , 1.4 * self.a * (1 - self.e)) # This will work for both classical and relativistic orbits
+        
         ax.set_xlabel("x [AU]")
         ax.set_ylabel("y [AU]")
         ax.set_title("Two-Body Problem Orbit")
-        # Plot central black hole and Schwarzschild radius
+
+        # Central body and Schwarzschild radius
         ax.scatter(0, 0, color='k', s=100, label="Black Hole")
         schwarzschild_circle = plt.Circle((0, 0), self.R_s, color='r', fill=False, linestyle='dashed', label="Schwarzschild Radius")
         ax.add_patch(schwarzschild_circle)
-        # Plot initial position of orbiting body
-        ax.plot(self.x, self.y, color = "orange", label = "orbit", linestyle='--', alpha=0.5)
-        point, = ax.plot([], [], color = "b", label = "Planet", marker = "o", markersize = 10)
+
+        # Full orbit path (static background)
+        ax.plot(self.x, self.y, color="orange", label="Orbit", linestyle='--', alpha=0.5)
+
+        # Dynamic elements
+        point, = ax.plot([], [], 'bo', markersize=10, label="Planet", zorder=10)
+        trail_line, = ax.plot([], [], color='blue', linewidth=1.5, alpha=0.7, label="Trajectory", zorder=5)
+
+        # Velocity vector setup
+        max_vel = max(np.max(np.abs(self.vx)), np.max(np.abs(self.vy)))
+        arrow_scale = 0.2 * self.a / max_vel  # Smaller scale for clarity
+
+        velocity_arrow = ax.quiver(0, 0, 0, 0,\
+                                color='dodgerblue',\
+                                angles='xy',\
+                                scale_units='xy',\
+                                scale=1,\
+                                width=0.008,\
+                                headwidth=4,\
+                                headlength=5,\
+                                headaxislength=4.5,\
+                                zorder=9)
+
+        # Dynamic text
+        legend_text = ax.text(0.02, 0.97, "", transform=ax.transAxes, fontsize=9, linespacing=1.5, verticalalignment='top', horizontalalignment='left',\
+                                bbox=dict(boxstyle='round,pad=0.4',\
+                                    facecolor='whitesmoke',\
+                                    edgecolor='gray',\
+                                    linewidth=1,\
+                                    alpha=0.95\
+                                )
+                            )
+
         ax.legend()
-        
-        # Function to animate the point
-        def animate_point(i):
+
+        # Adaptive sampling
+        total_frames = len(self.t)
+        target_frames = 100
+        if total_frames <= target_frames:
+            step = 1
+            sampled_indices = range(total_frames)
+        else:
+            step = max(1, total_frames // target_frames)
+            sampled_indices = range(0, total_frames, step)
+
+        # Frame update function
+        def animate_frame(i):
             x_i = self.x[i]
             y_i = self.y[i]
-            point.set_data([x_i], [y_i])  # Pass as sequences (list)
-            return point,
-    
-        # Downsample the data
-        step = len(self.t)//50  # Adjust this value to control the downsampling
+            vx_i = self.vx[i]
+            vy_i = self.vy[i]
+            v_mod_i = np.sqrt(vx_i**2 + vy_i**2)
 
-        sampled_indices = range(0, len(self.t), step)
+            # Update planet and trail
+            point.set_data([x_i], [y_i])
+            trail_line.set_data(self.x[:i+1], self.y[:i+1])
 
-        # Create the animation
-        movie_wave = animation.FuncAnimation(fig, animate_point, frames=sampled_indices, interval=50, blit=True)
+            # Update velocity vector (arrow from current position)
+            velocity_arrow.set_offsets([x_i, y_i])
+            velocity_arrow.set_UVC(vx_i * arrow_scale, vy_i * arrow_scale)
 
-        # Save the animation as GIF
+            # Update text
+            legend_text.set_text(
+                f"Current Position [AU]:\n"
+                f"(x = {x_i:.3f}, y = {y_i:.3f})\n"
+                f"Current Velocity [AU/yr]: \n v = {v_mod_i:.3e}\n"
+                f"(vx = {vx_i:.3e}, vy = {vy_i:.3e})"
+            )
+
+            return point, trail_line, velocity_arrow, legend_text
+
+        # Animate
+        anim = animation.FuncAnimation(fig, animate_frame, frames=sampled_indices, interval=50, blit=True, repeat=True)
+
         if save_dir is not None:
-            gif_output = save_dir + "/orbit.gif"
-            movie_wave.save(gif_output, writer="pillow", fps=24)
-            
+            os.makedirs(save_dir, exist_ok=True)
+            gif_output = os.path.join(save_dir, "orbit.gif")
+            anim.save(gif_output, writer="pillow", fps=20, dpi=100)
+
         plt.close()
+
+        return anim
         
-        return HTML(movie_wave.to_jshtml())
+
+
+def parse_config_file(config_path):
+    config = configparser.ConfigParser()
+    config.read(config_path)
     
+    defaults = {
+        'N': config.getint('two_body', 'N', fallback=1),
+        'a': config.getfloat('two_body', 'a', fallback=1.0),
+        'e': config.getfloat('two_body', 'e', fallback=0.0),
+        'M': config.getfloat('two_body', 'M', fallback=1.0),
+        'method': config.get('two_body', 'method', fallback='scipy'),
+        'correction': config.getboolean('two_body', 'correction', fallback=False),
+        'save_init_plot': config.getboolean('two_body', 'save_init_plot', fallback=False),
+        'save_plot': config.getboolean('two_body', 'save_plot', fallback=False),
+        'output_dir': config.get('two_body', 'output_dir', fallback='.'),
+        'animate': config.getboolean('two_body', 'animate', fallback=False),
+    }
+    return defaults
 
-# Main function to run the code
 if __name__ == "__main__":
+    # Parse config file if it exists
+    config_path = Path('config.ini')
+    defaults = parse_config_file(config_path) if config_path.exists() else {}
 
-    # Parsing arguments
+    # Parse command line arguments (which will override config file)
     parser = argparse.ArgumentParser(description="Two Body Problem Solver")
-    parser.add_argument("-N", "--N", type=int, default=1, help="Number of orbits")
-    parser.add_argument("-a", "--a", type=float, default=1, help="Semi-major axis")
-    parser.add_argument("-e", "--e", type=float, default=0, help="Eccentricity")
-    parser.add_argument("-M", "--M", type=float, default=1, help="Mass of the Black Hole")
-    parser.add_argument("-dt", "--dt", type=float, default=0.01, help="Time step")
-    parser.add_argument("-m", "--method", type=str, default="scipy", help="Integration method: trapezoidal, RK3, or scipy")
-    parser.add_argument("-c", "--correction", action="store_true", help="Use relativistic correction")
-    parser.add_argument("-save_init", "--save_init_plot", action="store_true", help="Save the initial setup plot")
-    parser.add_argument("-save_plot", "--save_plot", action="store_true", help="Save the orbit plot")
-    parser.add_argument("-dir", "--output_dir", type=str, default=".", help="Output directory to save the result files, i.e, orbit.csv, orbit.png, and orbit.gif")
-    parser.add_argument("-anim", "--animate", action="store_true", help="Create animation and save it")
+    parser.add_argument("-c", "--config", type=str, default="config.ini", help="Path to config file")
+    parser.add_argument("-N", "--N", type=int, default=defaults.get('N', 1), help="Number of orbits")
+    parser.add_argument("-a", "--a", type=float, default=defaults.get('a', 1), help="Semi-major axis")
+    parser.add_argument("-e", "--e", type=float, default=defaults.get('e', 0), help="Eccentricity")
+    parser.add_argument("-M", "--M", type=float, default=defaults.get('M', 1), help="Mass of the Black Hole")
+    parser.add_argument("-m", "--method", type=str, default=defaults.get('method', 'scipy'), help="Integration method")
+    parser.add_argument("-corr", "--correction", action='store_true', default=defaults.get('correction', False), 
+                       help="Use relativistic correction")
+    parser.add_argument("-save_init", "--save_init_plot", action='store_true', 
+                       default=defaults.get('save_init_plot', False), help="Save the initial setup plot")
+    parser.add_argument("-save_plot", "--save_plot", action='store_true', 
+                       default=defaults.get('save_plot', False), help="Save the orbit plot")
+    parser.add_argument("-dir", "--output_dir", type=str, default=defaults.get('output_dir', '.'), 
+                       help="Output directory for results")
+    parser.add_argument("-anim", "--animate", action='store_true', default=defaults.get('animate', False), 
+                       help="Create animation")
+    
     args = parser.parse_args()
-    # Extracting arguments
+    
+    # If a different config file was specified, use it
+    if args.config != 'config.ini' or not config_path.exists():
+        defaults = parse_config_file(args.config)
+        # Update args with values from the specified config file
+        for key, value in defaults.items():
+            if getattr(args, key, None) == parser.get_default(key):
+                setattr(args, key, value)
+    
     N = args.N
     a = args.a
     e = args.e
     M = args.M
-    dt = args.dt
     method = args.method
     correction = args.correction
     save_init = args.save_init_plot
     save = args.save_plot
     output_dir = args.output_dir
     animate = args.animate
-    # Create the two body instance
+    
     two_body_instance = TwoBodyProblem(M, a, e)
-    # Plot the grid
     two_body_instance.plot_grid(save_init, output_dir)
-    # Run the integrator
-    run_integrator = RunIntegrator(N, dt, correction, two_body_instance, method, output_dir, save)
+    run_integrator = RunIntegrator(N, correction, two_body_instance, method, output_dir, save)
     sol = run_integrator.run()
     
-    # Create the animation
     if animate:
-        orbit_file_dir = f"{output_dir}/orbit.csv"
+        orbit_file_dir = f"{output_dir}/orbit.vtk"
         animation_instance = Animation_TB(orbit_file_dir, output_dir)
         animation_instance.animate()
-    

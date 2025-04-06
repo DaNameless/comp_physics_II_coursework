@@ -49,18 +49,29 @@ class TwoBodyProblem:
         Parameters
         ----------
         M, a, e
-        """
-        self.M = M
-        self.a = a
-        self.e = e
-        
+        """        
         # Let's define some fixed variables
+        if e >= 1 or e < 0:
+            raise ValueError("Eccentricity must be less than 1")
+        else:
+            self.e = e
+            
+        if M <= 1e-9:
+            raise ValueError("Mass must be greater than 0")
+        else:
+            self.M = M  
+
+        if a <= 1e-9:
+            raise ValueError("Semi-major axis must be greater than 0")
+        else:   
+            self.a = a
+
         self.T = 2*np.pi*np.sqrt((a**3)/(G*self.M)) #[years]
         self.R_s = (2*G*self.M)/(C**2)
         self.r0 = np.array([0, a*(1-e)])
         self.v0 = np.array([-np.sqrt((G*self.M/a)*((1+e)/(1-e))),0])
         self.s0 = np.array([self.r0, self.v0])
-    
+        
     def plot_grid(self, save=False, output_dir="."):
         """
         
@@ -286,7 +297,11 @@ class RunIntegrator:
         self.R_s = self.two_body_instance.R_s
         self.e = self.two_body_instance.e
         self.t_span = [0, self.N*self.T]
-        self.method = method
+        if method not in ["trapezoidal", "RK3", "scipy"]:
+            raise ValueError("Invalid integration method")
+        else: 
+            self.method = method
+
         self.output_dir = output_dir
         self.save = save
 
@@ -302,9 +317,11 @@ class RunIntegrator:
         elif self.method == "RK3":
             integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.RK3()
-        else:
+        elif self.method == "scipy":
             integrator = Integrators(self.N, self.correction, self.two_body_instance)
             self.sol = integrator.scipy_integator()
+        else:
+            raise ValueError("Invalid integration method")
 
         # Unpack and round to 5 decimals
         x = np.around(self.sol[0][:, 0, 0], decimals=5)
