@@ -507,7 +507,7 @@ class RunIntegrator:
         plt.close()
         return fig
     
-class Animation_TB:
+class Animation:
     """ 
     Class to animate the two body problem orbit.
     It uses the `matplotlib` library to create the animation. It requires the `pyvista` library to read the VTK file and extract the orbit data.
@@ -576,7 +576,7 @@ class Animation_TB:
 
         # Create plot
         fig, ax = plt.subplots(figsize=(10,10))
-        ax.set_xlim(-1.6 * self.a * np.sqrt(1 - self.e**2), 1.6 * self.a * np.sqrt(1 - self.e**2))
+        ax.set_xlim(-1.7 * self.a * np.sqrt(1 - self.e**2), 1.7 * self.a * np.sqrt(1 - self.e**2))
         
         # To avoid the orbit to be cut in half, we need to set the limits
         # to the maximum and minimum values of the orbit
@@ -703,7 +703,32 @@ def parse_config_file(config_path):
     }
     return defaults
 
-if __name__ == "__main__":
+
+def main():
+    """
+    Main function to run the two body problem solver.
+    It parses the command line arguments and the configuration file.
+    It creates the output directory if it does not exist.
+    It runs the integrator and saves the desired results.
+    It creates the animation if requested.
+    Input for parser:
+        -c, --config (str) -> Path to the configuration file (.ini).
+        -N, --N (int) -> Number of orbits to integrate.
+        -a, --a (float) -> Semi-major axis of the orbit, in units of AU.    
+        -e, --e (float) -> Eccentricity of the orbit. 0<=e<1
+        -M, --M (float) -> Mass of the central body, in units of Solar masses.
+        -m, --method (str) -> Integration method to use. Options are "trapezoidal", "RK3" or "scipy".
+        -corr, --correction (bool) -> If True, uses the relativistic correction. False uses the classical two body problem.
+        -save_init, --save_init_plot (bool) -> If True, saves the initial setup plot.
+        -save_plot, --save_plot (bool) -> If True, saves the orbit plot.
+        -dir, --output_dir (str) -> Output directory to save the plot.
+        -anim, --animate (bool) -> If True, creates the animation.
+    Output:
+        Requested plots and VTK files with the orbit data.
+    
+    Author: R.S.S.G.
+    Date created: 05/04/2025 
+    """
     # Parse config file if it exists
     config_path = Path('config.ini')
     defaults = parse_config_file(config_path) if config_path.exists() else {}
@@ -755,5 +780,10 @@ if __name__ == "__main__":
     
     if animate:
         orbit_file_dir = f"{output_dir}/orbit.vtk"
-        animation_instance = Animation_TB(orbit_file_dir, output_dir)
+        animation_instance = Animation(orbit_file_dir, output_dir)
         animation_instance.animate()
+
+
+if __name__ == "__main__":
+    # Run the main function
+    main()
