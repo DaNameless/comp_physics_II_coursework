@@ -2,7 +2,6 @@ import os
 # Modules for parsing the config file and command line arguments
 import argparse
 import configparser
-from pathlib import Path
 
 #Importing necessary libraries for calculations, plotting and writing files
 import numpy as np 
@@ -110,6 +109,7 @@ class TwoBodyProblem:
         ax.scatter(r0[0], r0[1], color='b', s=25, label="Planet")
         ax.legend()
         if init_plot_name is not None:
+            os.makedirs(output_dir, exist_ok=True)
             plt.savefig(f"{output_dir}/{init_plot_name}.png")
         
         plt.close()
@@ -450,6 +450,8 @@ class RunIntegrator:
         orbit.field_data['schwarzschild_radius'] = [np.around(self.R_s, 5)]
         orbit.field_data['correction_enabled'] = [1 if self.correction else 0]
 
+
+        os.makedirs(self.output_dir, exist_ok=True)
         # Save as VTK file
         vtk_filename = f"{self.output_dir}/{self.vtk_name}.vtk"
         orbit.save(vtk_filename)
@@ -509,6 +511,7 @@ class RunIntegrator:
         ax.plot(x, y, color = "orange", label = "orbit")
         ax.legend()
         if orbit_plot_name is not None:
+            os.makedirs(output_dir, exist_ok=True)
             orbit_type = "relativistic" if correction else "classical"
             plt.savefig(f"{output_dir}/{orbit_type}_{orbit_plot_name}.png")
 

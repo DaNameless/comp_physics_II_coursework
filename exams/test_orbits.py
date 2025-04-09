@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import os
-import shutil
+import shutil # We will use it to recursively delete entire directory trees
 from orbit import TwoBodyProblem, RunIntegrator  # Replace with your actual module
 
 
