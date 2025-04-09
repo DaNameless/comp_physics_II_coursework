@@ -12,8 +12,6 @@ from scipy.integrate import solve_ivp
 import pyvista as pv
 
 
-
-
 # Let's use an specific style for the plots!
 plt.style.use(['science','notebook','grid'])
 # Set the font size globally

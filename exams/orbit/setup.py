@@ -7,4 +7,4 @@ setup(name = "orbit",
       license = "BSD",
       version = "1.0",
       packages = find_packages(),
-      install_requires = ["numpy", "matplotlib", "scipy", "argparse", "configparser", "pyvista"])
+      install_requires = ["numpy", "matplotlib", "scipy", "argparse", "configparser", "pyvista", "scienceplots"])
