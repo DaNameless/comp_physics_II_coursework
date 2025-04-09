@@ -1,7 +1,9 @@
 import os
+
 # Modules for parsing the config file and command line arguments
 import argparse
 import configparser
+from pathlib import Path
 
 #Importing necessary libraries for calculations, plotting and writing files
 import numpy as np 
