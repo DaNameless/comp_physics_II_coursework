@@ -5,7 +5,7 @@ $$\frac{d\vec{r}}{dt}=\vec{v}$$
 
 $$m\frac{d\vec{v}}{dt} = -\frac{G m M}{r^3} \vec{r} \left( 1 + \frac{3 L^2}{r^2 c^2} \right)$$
 
-where $L = \| \vec{r} \times \vec{v} \|$ is the specific angular momentum of the planet, and $c$ is the speed of light. The correction term, $\frac{3\,L^2}{r^2\,c^2}$, accounts for the relativistic precession of the orbit. Note that $m$ cancels out in the above equation.
+where $L = \lvert \vec{r} \times \vec{v} \rvert$ is the specific angular momentum of the planet, and $c$ is the speed of light. The correction term, $\frac{3\,L^2}{r^2\,c^2}$, accounts for the relativistic precession of the orbit. Note that $m$ cancels out in the above equation.
 
 At $t=0$, we will place the planet at **periapsis** (the closest point in its orbit to the black hole). Thus:
 
