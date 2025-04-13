@@ -109,10 +109,32 @@ Depending on the options you choose, the following files may be saved in the out
 
 
 ## Importing the module
-You can also import the module in a python notebook for example. 
+You can also import the module in a python notebook as show in `examples/basic_usage.ipynb`. 
 
-### Installation
+## Installation
 
+To install the `orbit` module and its dependencies, clone the repository and install it using `pip`:
+
+```bash
+git clone https://github.com/DaNameless/comp_physics_II_coursework/tree/main/exams/orbit.git
+cd orbit
+pip install .
+```
+
+This will install the package along with all required dependencies:
+
+- `numpy`
+- `matplotlib`
+- `scipy`
+- `pyvista`
+- `scienceplots`
+
+> Note: `argparse` and `configparser` are part of Python's standard library, so you don't need to install them separately.
+---
+
+### Recommended: Create a Virtual Environment
+
+To avoid conflicts with other Python packages, it’s a good idea to create and activate a virtual environment
 
 ## Author
 - [Rolando Sebastián Sánchez García] 
