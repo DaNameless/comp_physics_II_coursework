@@ -225,7 +225,7 @@ class Integrators:
         t_list = [t_span[0]]
 
         # Maximum allowed value before we consider it diverged
-        MAX_VALUE = 1e5
+        MAX_VALUE = 1e4
 
         for j in range(1, int((t_span[1] - t_span[0]) / dt) + 1):
             t_prev = t_list[-1]
@@ -285,7 +285,7 @@ class Integrators:
         t_list = [t_span[0]]
 
         # Maximum allowed value before we consider it diverged
-        MAX_VALUE = 1e5 
+        MAX_VALUE = 1e4
 
         for j in range(1, int((t_span[1] - t_span[0]) / dt) + 1):
             t_prev = t_list[-1]
@@ -716,7 +716,7 @@ def parse_config_file(config_path):
         'orbit_vtk_name': config.get('two_body', 'orbit_vtk_name', fallback="orbit"),
         'animation_name': config.get('two_body', 'animation_name', fallback=None),
         'vtk_orbit': config.get('two_body', 'vtk_orbit', fallback=None),
-        'output_dir': config.get('two_body', 'output_dir', fallback='.'),
+        'output_dir': config.get('two_body', 'output_dir', fallback='.')
     }
     return defaults
 
@@ -749,9 +749,15 @@ def main():
     Author: R.S.S.G.
     Date created: 05/04/2025 
     """
+    print("Welcome")
+
     # Parse config file if it exists
     config_path = Path('config.ini')
+    if config_path.exists():
+        print("Detected config.ini file")
+
     defaults = parse_config_file(config_path) if config_path.exists() else {}
+
 
     # Parse command line arguments (which will override config file)
     parser = argparse.ArgumentParser(description="Two Body Problem Solver")
