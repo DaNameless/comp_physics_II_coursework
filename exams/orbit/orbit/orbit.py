@@ -716,11 +716,16 @@ def parse_config_file(config_path):
         'orbit_vtk_name': config.get('two_body', 'orbit_vtk_name', fallback="orbit"),
         'animation_name': config.get('two_body', 'animation_name', fallback=None),
         'vtk_orbit': config.get('two_body', 'vtk_orbit', fallback=None),
-        'output_dir': config.get('two_body', 'output_dir', fallback='.')
+        'output_dir': config.get('two_body', 'output_dir', fallback='./outputfolder')
     }
     return defaults
 
 def print_logo():
+    """
+    This is just a function that prints a logo at the beggining.
+    Author: R.S.S.G
+    Date: 13/04/2024
+    """
     logo = r"""
    ___   ____   ____  ___ _____ 
   / _ \ |  _ \ | __ )|_ _|_   _|
@@ -760,6 +765,7 @@ def main():
     
     Author: R.S.S.G.
     Date created: 05/04/2025 
+    Date modified: 13/04/2025
     """
 
     print_logo()
@@ -794,7 +800,7 @@ def main():
                        help="Saving name of the orbit's animation")
     parser.add_argument("-vtk_orbit", "--vtk_orbit", type=str, default=defaults.get('vtk_orbit', None),
                        help="Path including name to the VTK file with the orbit data")
-    parser.add_argument("-dir", "--output_dir", type=str, default=defaults.get('output_dir', '.'), 
+    parser.add_argument("-dir", "--output_dir", type=str, default=defaults.get('output_dir', './outputfolder'), 
                        help="Output directory for desired results")
     
     
@@ -832,7 +838,8 @@ def main():
     print("Running integration routine...")
     run_integrator = RunIntegrator(N, correction, dt, two_body_instance, method, output_dir, orbit_vtk_name, orbit_plot_name)
     sol = run_integrator.run()
-    print(f"Plotting orbit in {output_dir}/{orbit_plot_name} ...")
+    if orbit_plot_name is not None:
+        print(f"Plotting orbit in {output_dir}/{orbit_plot_name} ...")
     print(f"Writting vtk file with orbit solution in {output_dir}/{orbit_vtk_name}.vtk ...")
 
     if animation_name is not None and vtk_orbit is not None:
