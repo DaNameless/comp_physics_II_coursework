@@ -1,4 +1,4 @@
-# orbit module
+# ORBIT
 This module generates a simulation of the two-body problem with a black hole by solving the **relativistic ODE system** describing the motion of the planet:
 
 $$\frac{d\vec{r}}{dt}=\vec{v}$$
