@@ -25,6 +25,8 @@ $$r_s = \frac{2 G M}{c^2}$$
 
 The available methods for solving are: **Trapezoidal**, **RK3**, **Scipy (DOP853)**
 
+---
+
 ## General structure of the module 
 The structure of the module `orbit.py` is the following: <br>
 ```
@@ -50,6 +52,7 @@ orbit/                          # Root package directory
 ├── setup.py                    # Package installation
 └── README.md                   # Project overview (This file)
 ```
+---
 
 ## Usage as script
 
@@ -65,7 +68,7 @@ This uses a configuration file (`config.ini`) to define the simulation parameter
 
 ---
 
-### 🛠️ Available Command Line Options
+### Available Command Line Options
 
 | Flag               | Description                                                                 |
 |--------------------|-----------------------------------------------------------------------------|
@@ -86,7 +89,7 @@ This uses a configuration file (`config.ini`) to define the simulation parameter
 
 ---
 
-### 🧪 Example
+### Example
 
 Simulate an orbit with relativistic correction using RK3 without a config.ini file:
 
@@ -98,7 +101,7 @@ python orbit.py -N 3 -a 1.5 -e 0.7 -M 4 -m RK3 -corr \
 
 ---
 
-### 🗂 Output Files
+### Output Files
 
 Depending on the options you choose, the following files may be saved in the output directory:
 
@@ -111,6 +114,7 @@ Depending on the options you choose, the following files may be saved in the out
 ## Importing the module
 You can also import the module in a python notebook as show in `examples/basic_usage.ipynb`. 
 
+---
 ## Installation
 
 To install the `orbit` module and its dependencies, clone the repository and install it using `pip`:
