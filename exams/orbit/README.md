@@ -120,8 +120,8 @@ You can also import the module in a python notebook as show in `examples/basic_u
 To install the `orbit` module and its dependencies, clone the repository and install it using `pip`:
 
 ```bash
-git clone https://github.com/DaNameless/comp_physics_II_coursework/tree/main/exams/orbit.git
-cd orbit
+git clone https://github.com/DaNameless/comp_physics_II_coursework.git
+cd exams/orbit
 pip install .
 ```
 
