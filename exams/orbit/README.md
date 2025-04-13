@@ -26,39 +26,86 @@ $$r_s = \frac{2\,G\,M}{c^2}$$
 The available methods for solving are: **Trapezoidal**, **RK3**, **Scipy (DOP853)**
 
 ## General structure of the module 
-
 The structure of the module `orbit.py` is the following: <br>
 ```
 orbit/                          # Root package directory
 │
 ├── orbit/                      # Main module package
 │   ├── __init__.py             # Package initialization
-│   └── orbit,py                # Main module/script
-│
-├── tests/                      # Unit and integration tests
+│   ├── orbit.py                # Main module/script
 │   └── test_orbit.py           # Unit Testing file
 │
 ├── examples/                   # Example scripts and notebooks
-│   ├── config.ini              # Cofig file to initialize script
-│   ├── basic_usage.py          # Minimal usage example
+│   ├── *.ini                   # Different examples of configuration files
 │   ├── example_output/
-│   │  └
-│   └── basic_usage.ipynb       # Advanced example in notebook
+│   │   ├ *.png                 # Different example plots for the orbits
+|   │   ├ *.gif                 # Different example animations for the orbits
+|   │   └ *.vtk                 # Different example vtk files for the orbits
+│   └── basic_usage.ipynb       # Full example in interactive notebook
 │
 ├── analysis.ipynb              # Analysis Python Notebook
-├── analysis_output/
-│   └                           # Different vtk files generated for the analysis review
+├── outputfolder/
+│   └*.vtk                      # Different vtk files generated for the analysis review
 │
 ├── setup.py                    # Package installation
-└── README.md                   # Project overview
+└── README.md                   # Project overview (This file)
 ```
 
-## Using the module as a script 
+## Usage as script
 
+### Running the Two-Body Problem Simulation
 
+You can run the simulation directly from the command line using:
 
-### Example:
+```bash
+python orbit.py --config config.ini
+```
 
+This uses a configuration file (`config.ini`) to define the simulation parameters. If you don't provide a config file, the program will fall back to default values.
+
+---
+
+### 🛠️ Available Command Line Options
+
+| Flag               | Description                                                                 |
+|--------------------|-----------------------------------------------------------------------------|
+| `-c`, `--config`   | Path to the `.ini` config file (default: `config.ini`)                      |
+| `-N`               | Number of orbits to integrate                                               |
+| `-a`               | Semi-major axis (in AU)                                                     |
+| `-e`               | Orbital eccentricity (0 <= e < 1)                                           |
+| `-M`               | Mass of the central body (in Solar masses)                                  |
+| `-dt`              | Time step (optional, will be estimated if not provided)                     |
+| `-m`               | Integration method: `trapezoidal`, `RK3`, or `scipy` (DOP853)               |
+| `-corr`            | Add relativistic correction (flag)                                          |
+| `-init_n`          | Name for saving the initial configuration plot                              |
+| `-plot_n`          | Name for saving the final orbit plot                                        |
+| `-orbit_n`         | Name for saving the orbit VTK file                                          |
+| `-anim_n`          | Name for saving the orbit animation (as GIF)                                |
+| `-vtk_orbit`       | Path to VTK file used for generating animation                              |
+| `-dir`             | Output directory (default: current directory `.`)                           |
+
+---
+
+### 🧪 Example
+
+Simulate an orbit with relativistic correction using RK3 without a config.ini file:
+
+```bash
+python orbit.py -N 3 -a 1.5 -e 0.7 -M 4 -m RK3 -corr \
+-init_n rk3_start -plot_n rk3_orbit -orbit_n rk3_orbit \
+-anim_n rk3_anim -vtk_orbit rk3_orbit.vtk
+```
+
+---
+
+### 🗂 Output Files
+
+Depending on the options you choose, the following files may be saved in the output directory:
+
+- `init_plot_name.png` → Initial system setup
+- `orbit_plot_name.png` → Full orbital trajectory
+- `orbit_vtk_name.vtk` → VTK file with orbit data (for animations)
+- `animation_name.gif` → Orbit animation with velocity vector and stats
 
 
 ## Importing the module

@@ -720,6 +720,18 @@ def parse_config_file(config_path):
     }
     return defaults
 
+def print_logo():
+    logo = r"""
+   ___   ____   ____  ___ _____ 
+  / _ \ |  _ \ | __ )|_ _|_   _|
+ | | | || | // |  _ \ | |  | |  
+ | |_| || |\\  | |_)  | |  | |  
+  \___/ |_| \\ |____/|___| |_|  v.0.0.1
+
+           by R.S.S.G
+    """
+    print(logo)
+
 
 def main():
     """
@@ -749,12 +761,14 @@ def main():
     Author: R.S.S.G.
     Date created: 05/04/2025 
     """
-    print("Welcome")
+
+    print_logo()
 
     # Parse config file if it exists
     config_path = Path('config.ini')
     if config_path.exists():
-        print("Detected config.ini file")
+        print("Detected config.ini file in current directory.")
+        print("It will be used as default unless other file is specified.")
 
     defaults = parse_config_file(config_path) if config_path.exists() else {}
 
@@ -788,6 +802,7 @@ def main():
     
     # If a different config file was specified, use it
     if args.config != 'config.ini' or not config_path.exists():
+        print(f"{args.config} file has been specified as initial configuration to be used.")
         defaults = parse_config_file(args.config)
         # Update args with values from the specified config file
         for key, value in defaults.items():
@@ -807,14 +822,23 @@ def main():
     animation_name = args.animation_name
     vtk_orbit = args.vtk_orbit
     output_dir = args.output_dir
-    
+
+    print("Initializing two body problem instance...")
     two_body_instance = TwoBodyProblem(M, a, e)
+
+    print(f"Plotting initial configuration in {output_dir}/{init_plot_name}")
     two_body_instance.plot_grid(init_plot_name, output_dir)
+
+    print("Running integration routine...")
     run_integrator = RunIntegrator(N, correction, dt, two_body_instance, method, output_dir, orbit_vtk_name, orbit_plot_name)
     sol = run_integrator.run()
+    print(f"Plotting orbit in {output_dir}/{orbit_plot_name} ...")
+    print(f"Writting vtk file with orbit solution in {output_dir}/{orbit_vtk_name}.vtk ...")
 
     if animation_name is not None and vtk_orbit is not None:
         # Create the animation
+        print(f"Generating animation in {output_dir}/{animation_name}.gif")
+
         orbit_file = f"{vtk_orbit}"
         animation_instance = Animation(orbit_file, output_dir, animation_name)
         animation_instance.animate()
